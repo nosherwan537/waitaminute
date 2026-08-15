@@ -96,19 +96,26 @@ window.fetch = async function (...args: Parameters<typeof fetch>) {
 };
 
 const nativeOpen = XMLHttpRequest.prototype.open;
+// `open` is overloaded (2-arg and 5-arg forms), so type the patch loosely here
+// and forward the exact arguments we were handed.
 XMLHttpRequest.prototype.open = function (
-  method: string,
-  url: string | URL,
-  ...rest: unknown[]
-) {
-  if (isCaptionUrl(String(url))) {
+  this: XMLHttpRequest,
+  ...args: [method: string, url: string | URL, ...rest: unknown[]]
+): void {
+  const url = String(args[1]);
+  if (isCaptionUrl(url)) {
     this.addEventListener("load", () => {
-      if (typeof this.responseText === "string") publish(parseJson3(this.responseText));
+      // responseText throws on non-text responseTypes; captions are always text.
+      try {
+        if (typeof this.responseText === "string") publish(parseJson3(this.responseText));
+      } catch {
+        /* not a text response after all */
+      }
     });
   }
-  // eslint-disable-next-line prefer-rest-params
-  return nativeOpen.apply(this, arguments as never);
-} as typeof XMLHttpRequest.prototype.open;
+  // Cast past the overload set: we forward exactly what the caller passed.
+  (nativeOpen as (...a: unknown[]) => void).apply(this, args);
+};
 
 // ── B) Active fetch ─────────────────────────────────────────────────────────
 
