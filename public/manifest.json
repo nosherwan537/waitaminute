@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Hey Buddy, Note This",
+  "version": "0.1.0",
+  "description": "Press a hotkey while watching a video. The last 60 seconds becomes a note.",
+  "permissions": ["storage", "identity", "downloads"],
+  "host_permissions": ["https://www.youtube.com/*"],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content/interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content/content-script.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": false
+    }
+  ],
+  "options_page": "options/options.html",
+  "commands": {
+    "capture-now": {
+      "suggested_key": { "default": "Alt+Shift+N", "mac": "Alt+Shift+N" },
+      "description": "Note the last 60 seconds"
+    },
+    "capture-previous": {
+      "suggested_key": { "default": "Alt+Shift+B", "mac": "Alt+Shift+B" },
+      "description": "Note the 60 seconds before that (pressed too late)"
+    },
+    "capture-long": {
+      "suggested_key": { "default": "Alt+Shift+L", "mac": "Alt+Shift+L" },
+      "description": "Note the last 3 minutes"
+    }
+  }
+}
