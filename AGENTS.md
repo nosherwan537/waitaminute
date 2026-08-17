@@ -16,6 +16,9 @@ constrains almost every design decision below.
 src/
   types.ts              shared types + the WINDOWS table (single source of hotkey offsets)
   lib/slice.ts          PURE. slice(), evictOldCues(), formatTimestamp(), deepLink()
+  lib/errors.ts         NamedError + the PLAN.md error registry names
+  lib/notegen.ts        PURE prompt building + reply parsing, plus the thin call shell
+  lib/providers/        model routing: 3 adapters, N presets (see below)
   content/interceptor.ts   MAIN world. Patches fetch/XHR. SECURITY-CRITICAL.
   content/content-script.ts ISOLATED world. Owns the cue list, talks to the SW.
   content/toast.ts      the entire product UI. Shadow DOM, never steals focus.
@@ -69,6 +72,24 @@ Three coordinated edits, in this order:
 
 No new slicing logic should be needed. If you find yourself writing some, the `WindowSpec`
 abstraction is wrong and that is the thing to fix.
+
+## Adding a model provider
+
+Almost always a **row in `src/lib/providers/presets.ts`** and nothing else. If
+the service speaks the OpenAI `/chat/completions` shape — most do, including
+OpenRouter, Groq, Together, DeepSeek, Ollama and LM Studio — point the row at
+the `openai-compatible` adapter and you are done. Add the origin to
+`optional_host_permissions` in the manifest so it can be requested at runtime.
+
+Write a new adapter only for a genuinely different wire format. An adapter is
+two pure functions (`buildRequest`, `extractText`); the fetch, the retry policy,
+and the HTTP-status-to-named-error mapping live once in `providers/index.ts` and
+must stay there — duplicating them is how a 429 starts behaving differently
+depending on who returned it.
+
+Model names in presets are **starting points, always editable in the UI**. They
+change faster than this extension ships, and a stale default must never become a
+dead end for the user.
 
 ## Adding a caption source (new platform)
 
