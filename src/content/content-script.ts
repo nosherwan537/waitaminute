@@ -14,6 +14,21 @@ import { showToast } from "./toast";
 /** Keyed by cue start time, so re-fetching the same track doesn't duplicate text. */
 const cueIndex = new Map<number, Cue>();
 
+/** Language of the track the cues came from. Decides whether the note gets translated. */
+let trackLanguage: { code?: string; name?: string } = {};
+
+/**
+ * Null until the interceptor has read the player response.
+ *
+ * The three states are genuinely different and the user deserves to be told
+ * which one they are in:
+ *   null  — still loading. Pressing the key this early is a timing miss.
+ *   true  — a track exists. If cues are empty, something went wrong fetching it.
+ *   false — this video has no captions at all. Nothing to wait for, and the
+ *           only real fix is the audio path (PLAN.md step 11).
+ */
+let captionsAvailable: boolean | null = null;
+
 /** Bound memory: 30 minutes of cues. The longest window a hotkey can ask for is 240s. */
 const RETAIN_SECONDS = 1800;
 
@@ -35,13 +50,46 @@ function ingest(cues: Cue[]): void {
   }
 }
 
+/**
+ * SECURITY: this listener trusts a shape, not a sender. Any script on the page
+ * can post `{source:"heystop", kind:"cues"}` and inject fake cue text, which
+ * would end up in a note. The blast radius is one junk note the user can delete
+ * — the same bounded risk PLAN.md already accepts for caption text itself, since
+ * anyone can upload a video with hostile subtitles. It is NOT a code-execution
+ * path: cues are only ever read as text and rendered escaped.
+ */
 window.addEventListener("message", (event: MessageEvent) => {
   if (event.source !== window) return;
   const data = event.data as InterceptorMessage | undefined;
-  if (data?.source !== "heystop" || data.kind !== "cues") return;
+  if (data?.source !== "heystop") return;
+
+  if (data.kind === "captions-status") {
+    captionsAvailable = data.available;
+    return;
+  }
+
+  if (data.kind !== "cues") return;
+  if (data.language) trackLanguage = { code: data.language, name: data.languageName };
   ingest(data.cues);
-  console.debug(`[heystop] ${data.cues.length} cues in, ${cueIndex.size} held`);
+  console.debug(
+    `[heystop] ${data.cues.length} cues in (${trackLanguage.name ?? "?"}), ${cueIndex.size} held`,
+  );
 });
+
+/** SPA navigation: drop the previous video's transcript before the next capture. */
+function resetForNewVideo(): void {
+  cueIndex.clear();
+  trackLanguage = {};
+  captionsAvailable = null;
+}
+
+let lastHref = location.href;
+setInterval(() => {
+  if (location.href !== lastHref) {
+    lastHref = location.href;
+    resetForNewVideo();
+  }
+}, 1000);
 
 /** Debounce so a double-press doesn't fire two captures (and two API calls). */
 let lastCapture = 0;
@@ -73,8 +121,18 @@ chrome.runtime.onMessage.addListener((msg: { kind: string; command?: CommandName
     }
 
     if (cueIndex.size === 0) {
-      sendResponse({ ok: false, reason: "CaptionsUnavailable" });
-      showToast("error", "No captions on this video");
+      // Three different situations, three different things worth saying. Lumping
+      // them together is how a tool teaches users to distrust its messages.
+      if (captionsAvailable === false) {
+        sendResponse({ ok: false, reason: "CaptionsUnavailable" });
+        showToast("error", "This video has no captions");
+      } else if (captionsAvailable === null) {
+        sendResponse({ ok: false, reason: "CaptionsUnavailable" });
+        showToast("info", "Still loading captions — try again in a second");
+      } else {
+        sendResponse({ ok: false, reason: "CaptionsUnavailable" });
+        showToast("error", "Couldn't read this video's captions");
+      }
       return;
     }
 
@@ -95,6 +153,8 @@ chrome.runtime.onMessage.addListener((msg: { kind: string; command?: CommandName
         videoTitle: document.title.replace(/ - YouTube$/, ""),
         videoUrl: location.href.split("&t=")[0] ?? location.href,
         deepLink: deepLink(location.href, result.startSec),
+        language: trackLanguage.code,
+        languageName: trackLanguage.name,
       },
     });
     return;

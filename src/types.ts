@@ -53,11 +53,30 @@ export interface TranscriptSlice {
 }
 
 /** Messages the MAIN-world interceptor posts to the isolated content script. */
-export type InterceptorMessage = {
-  source: "heystop";
-  kind: "cues";
-  cues: Cue[];
-};
+export type InterceptorMessage =
+  | {
+      source: "heystop";
+      kind: "cues";
+      cues: Cue[];
+      /** BCP-47 tag of the track these cues came from. */
+      language?: string;
+      /** Human-readable track name, e.g. "Spanish". */
+      languageName?: string;
+    }
+  | {
+      source: "heystop";
+      kind: "captions-status";
+      /**
+       * False only when the player response was read and listed ZERO caption
+       * tracks — the creator disabled them, or the language has no auto-captions.
+       *
+       * This is the distinction that makes the toast honest. Without it, "no
+       * captions on this video" and "captions have not loaded yet" look
+       * identical, and the user gets the same unhelpful message either way.
+       * It is also the signal the audio fallback (PLAN.md step 11) will switch on.
+       */
+      available: boolean;
+    };
 
 /** Messages the content script sends to the service worker. */
 export type CaptureRequest = {
