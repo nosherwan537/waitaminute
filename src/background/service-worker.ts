@@ -12,6 +12,8 @@
 import { formatNote, generateNote } from "../lib/notegen";
 import { isNamedError, NamedError } from "../lib/errors";
 import { DEFAULT_PRESET_ID, type ProviderConfig } from "../lib/providers";
+import { appendNote, localDay } from "../lib/notes-store";
+import { writeDayFile } from "./local-sink";
 import type { CommandName, TranscriptSlice, ToastMessage } from "../types";
 
 type SliceResponse =
@@ -71,11 +73,34 @@ chrome.commands.onCommand.addListener(async (command) => {
     const config = await loadConfig();
     const note = await generateNote(config, slice);
 
-    // STEP 5 lands here: LocalMdSink, then GoogleDocsSink. Until then, prove the
-    // pass end to end by printing exactly what would be written.
-    console.log(formatNote(note, slice));
+    // Persist BEFORE writing the file. Storage is the source of truth, so from
+    // this line on the note cannot be lost — only the file can be out of date,
+    // and the next capture repairs that.
+    const day = localDay();
+    const notes = await appendNote({
+      id: Date.now(),
+      day,
+      markdown: formatNote(note, slice),
+      videoTitle: slice.videoTitle,
+      deepLink: slice.deepLink,
+      command,
+    });
 
-    await toast(tabId, { state: "success", text: "Noted", count: await bumpCount() });
+    // A failed disk write is a warning, not a failed capture: the note is safe
+    // and GoogleDocsSink (step 6) will be the canonical destination anyway.
+    let warning: string | undefined;
+    try {
+      await writeDayFile(notes, day);
+    } catch (cause) {
+      warning = isNamedError(cause) ? cause.userMessage : "Couldn't write the local copy";
+      console.error("[heystop] LocalWriteFailed", cause);
+    }
+
+    await toast(tabId, {
+      state: warning ? "error" : "success",
+      text: warning ?? "Noted",
+      count: await bumpCount(),
+    });
   } catch (error) {
     const named: NamedError = isNamedError(error)
       ? error

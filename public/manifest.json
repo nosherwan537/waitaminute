@@ -3,7 +3,7 @@
   "name": "Hey Buddy, Note This",
   "version": "0.1.0",
   "description": "Press a hotkey while watching a video. The last 60 seconds becomes a note.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "downloads"],
   "host_permissions": ["https://www.youtube.com/*"],
   "optional_host_permissions": [
     "https://api.anthropic.com/*",

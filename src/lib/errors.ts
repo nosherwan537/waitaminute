@@ -19,6 +19,7 @@ export type ErrorName =
   | "NetworkUnavailable"
   | "MalformedNoteResponse"
   | "NothingToNote"
+  | "LocalWriteFailed"
   | "PermissionDenied";
 
 export class NamedError extends Error {
