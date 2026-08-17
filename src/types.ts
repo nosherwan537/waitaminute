@@ -43,6 +43,13 @@ export interface TranscriptSlice {
   videoUrl: string;
   /** Deep-link back to startSec. Turns the notes doc into an index. */
   deepLink: string;
+  /**
+   * BCP-47 tag of the caption track ("en", "es", "hi"). Drives whether the note
+   * gets an English translation alongside the speaker's actual words.
+   */
+  language?: string;
+  /** Human-readable track name ("Spanish"), for the note heading. */
+  languageName?: string;
 }
 
 /** Messages the MAIN-world interceptor posts to the isolated content script. */
