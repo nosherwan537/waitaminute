@@ -3,12 +3,15 @@
  * holds nothing that must survive. It asks the content script for a slice on
  * each hotkey press and orchestrates what happens next.
  *
- * SECURITY: this is the ONLY context allowed to touch the user's API key or
- * OAuth token. Never pass either toward the content script, and never toward
- * the MAIN world (see interceptor.ts).
+ * SECURITY: this is the ONLY context allowed to touch the user's API key. Never
+ * pass it toward the content script, and never toward the MAIN world (see
+ * interceptor.ts). Everything the key touches happens inside this file's call
+ * into `generateNote`.
  */
 
-import { formatTimestamp } from "../lib/slice";
+import { formatNote, generateNote } from "../lib/notegen";
+import { isNamedError, NamedError } from "../lib/errors";
+import { DEFAULT_PRESET_ID, type ProviderConfig } from "../lib/providers";
 import type { CommandName, TranscriptSlice, ToastMessage } from "../types";
 
 type SliceResponse =
@@ -28,15 +31,30 @@ async function toast(tabId: number, msg: Omit<ToastMessage, "kind">): Promise<vo
   }
 }
 
+/** Provider settings, with the defaults a fresh install starts from. */
+async function loadConfig(): Promise<ProviderConfig> {
+  const stored = (await chrome.storage.local.get("provider")) as { provider?: ProviderConfig };
+  return {
+    presetId: DEFAULT_PRESET_ID,
+    apiKey: "",
+    model: "",
+    ...stored.provider,
+  };
+}
+
+/** Errors whose only fix is on the options page. Opening it IS the useful action. */
+const OPENS_OPTIONS = new Set(["ApiKeyMissing", "ApiKeyInvalid", "ModelNotFound"]);
+
 chrome.commands.onCommand.addListener(async (command) => {
   if (!isCommand(command)) return;
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return;
+  const tabId = tab.id;
 
   let response: SliceResponse | undefined;
   try {
-    response = (await chrome.tabs.sendMessage(tab.id, {
+    response = (await chrome.tabs.sendMessage(tabId, {
       kind: "requestSlice",
       command,
     })) as SliceResponse;
@@ -49,15 +67,34 @@ chrome.commands.onCommand.addListener(async (command) => {
 
   const { slice } = response;
 
-  // STEP 4 lands here: noteGen -> {takeaway, cleaned}, then the two sinks.
-  // Until then, prove the pipeline by printing what we captured.
-  console.log(
-    `[heystop] ${command} | ${formatTimestamp(slice.startSec)}-${formatTimestamp(slice.endSec)} | ${slice.videoTitle}\n` +
-      `  ${slice.deepLink}\n` +
-      `  ${slice.text}`,
-  );
+  try {
+    const config = await loadConfig();
+    const note = await generateNote(config, slice);
 
-  await toast(tab.id, { state: "success", text: "Captured", count: await bumpCount() });
+    // STEP 5 lands here: LocalMdSink, then GoogleDocsSink. Until then, prove the
+    // pass end to end by printing exactly what would be written.
+    console.log(formatNote(note, slice));
+
+    await toast(tabId, { state: "success", text: "Noted", count: await bumpCount() });
+  } catch (error) {
+    const named: NamedError = isNamedError(error)
+      ? error
+      : new NamedError("MalformedNoteResponse", "Something went wrong", false, error);
+
+    // Full detail to the console, one actionable line to the user. Never the
+    // reverse: an error the user can't act on is noise, and one they never see
+    // is a silent failure.
+    console.error(`[heystop] ${named.name_}`, named.userMessage, named.cause ?? "");
+
+    // NothingToNote is a correct outcome, not a failure: the user pressed during
+    // an ad or dead air. Say so calmly and write nothing at all.
+    await toast(tabId, {
+      state: named.name_ === "NothingToNote" ? "info" : "error",
+      text: named.userMessage,
+    });
+
+    if (OPENS_OPTIONS.has(named.name_)) chrome.runtime.openOptionsPage();
+  }
 });
 
 /** Captures completed today. This is the dogfooding instrument, not decoration. */

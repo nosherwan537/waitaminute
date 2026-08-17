@@ -149,6 +149,36 @@ export function isNothingToNote(note: Note): boolean {
 }
 
 /**
+ * Pure. Render a note as Markdown.
+ *
+ * The shape is load-bearing, not decoration:
+ *   - takeaway on top, so the doc can be skimmed months later
+ *   - the speaker's own words below it, so a wrong takeaway is survivable —
+ *     the source is right there to correct it
+ *   - original language first, English underneath, when they differ. The
+ *     phrasing is what was lost; the translation is a reading aid, not a
+ *     replacement.
+ *   - deep link last, which is what turns a pile of notes into an index
+ */
+export function formatNote(note: Note, slice: TranscriptSlice): string {
+  const span = `${formatTimestamp(slice.startSec)}–${formatTimestamp(slice.endSec)}`;
+  const foreign = !isEnglish(slice.language);
+  const tag = foreign ? `[${slice.languageName ?? slice.language}]  ` : "";
+
+  const parts = [
+    `## ${note.takeaway ?? "Untitled"}`,
+    `${tag}${span} · ${slice.videoTitle}`,
+    "",
+    note.cleaned,
+  ];
+
+  if (note.translation) parts.push("", "— English —", note.translation);
+  parts.push("", `→ ${slice.deepLink}`);
+
+  return parts.join("\n");
+}
+
+/**
  * The full pass. Throws a NamedError from the registry on every failure path, so
  * the caller can turn any of them into a toast without a default branch.
  */

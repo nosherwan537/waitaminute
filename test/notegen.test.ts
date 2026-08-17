@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPrompt, parseNote, isNothingToNote, isEnglish, MAX_TOKENS } from "../src/lib/notegen";
+import { buildPrompt, parseNote, isNothingToNote, isEnglish, formatNote, MAX_TOKENS } from "../src/lib/notegen";
 import { NamedError } from "../src/lib/errors";
 import type { TranscriptSlice } from "../src/types";
 
@@ -155,5 +155,51 @@ describe("MAX_TOKENS", () => {
     // capture-long is 180s. Speech runs ~150 wpm, so ~450 words ~= 600 tokens,
     // doubled for a translation, plus thinking headroom on models that think.
     expect(MAX_TOKENS).toBeGreaterThan(4000);
+  });
+});
+
+describe("formatNote", () => {
+  const s = slice({ language: "en" });
+
+  it("puts the takeaway on top and the source underneath", () => {
+    const out = formatNote({ takeaway: "Gradients", cleaned: "The gradient.", translation: null }, s);
+    expect(out.startsWith("## Gradients\n")).toBe(true);
+    expect(out).toContain("The gradient.");
+    expect(out.indexOf("## Gradients")).toBeLessThan(out.indexOf("The gradient."));
+  });
+
+  it("includes the timestamp span and video title", () => {
+    const out = formatNote({ takeaway: "A", cleaned: "B", translation: null }, s);
+    expect(out).toContain("12:30–13:30 · Backpropagation from scratch");
+  });
+
+  it("ends with the deep link, which is what makes the doc an index", () => {
+    const out = formatNote({ takeaway: "A", cleaned: "B", translation: null }, s);
+    expect(out.trimEnd().endsWith("→ https://www.youtube.com/watch?v=abc&t=750s")).toBe(true);
+  });
+
+  it("omits the language tag and translation block for English", () => {
+    const out = formatNote({ takeaway: "A", cleaned: "B", translation: null }, s);
+    expect(out).not.toContain("[");
+    expect(out).not.toContain("— English —");
+  });
+
+  it("keeps the original words first and English underneath for a foreign track", () => {
+    const out = formatNote(
+      { takeaway: "Gradientes", cleaned: "El gradiente.", translation: "The gradient." },
+      slice({ language: "es", languageName: "Spanish" }),
+    );
+    expect(out).toContain("[Spanish]");
+    expect(out).toContain("— English —");
+    // The premise: the speaker's phrasing is the thing being preserved.
+    expect(out.indexOf("El gradiente.")).toBeLessThan(out.indexOf("The gradient."));
+  });
+
+  it("falls back to the language code when there is no readable name", () => {
+    const out = formatNote(
+      { takeaway: "A", cleaned: "B", translation: "C" },
+      slice({ language: "hi" }),
+    );
+    expect(out).toContain("[hi]");
   });
 });

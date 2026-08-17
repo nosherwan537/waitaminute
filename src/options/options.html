@@ -12,11 +12,15 @@
       h1 { font-size: 20px; margin: 0 0 4px; }
       p.sub { margin: 0 0 32px; opacity: .65; }
       label { display: block; font-weight: 600; margin: 20px 0 6px; }
-      input { width: 100%; padding: 8px 10px; border-radius: 6px;
-              border: 1px solid rgba(128,128,128,.4); background: transparent;
-              color: inherit; font: inherit; }
+      input, select {
+        width: 100%; padding: 8px 10px; border-radius: 6px;
+        border: 1px solid rgba(128,128,128,.4); background: transparent;
+        color: inherit; font: inherit;
+      }
       .hint { font-size: 12px; opacity: .6; margin-top: 6px; }
       #status { margin-top: 20px; font-size: 13px; min-height: 20px; }
+      #status.err { color: #dc2626; }
+      [hidden] { display: none !important; }
       kbd { border: 1px solid rgba(128,128,128,.4); border-bottom-width: 2px;
             border-radius: 4px; padding: 1px 5px; font-size: 12px; }
       .keys { margin-top: 32px; padding-top: 20px;
@@ -28,11 +32,27 @@
     <h1>Hey Buddy, Note This</h1>
     <p class="sub">Press a key while watching. Keep watching.</p>
 
-    <label for="key">Anthropic API key</label>
-    <input id="key" type="password" placeholder="sk-ant-..." autocomplete="off" spellcheck="false" />
+    <label for="preset">Model provider</label>
+    <select id="preset"></select>
+    <div class="hint" id="preset-note"></div>
+
+    <div id="base-url-row" hidden>
+      <label for="base-url">Server URL</label>
+      <input id="base-url" type="url" placeholder="https://…/v1" spellcheck="false" />
+    </div>
+
+    <label for="key">API key</label>
+    <input id="key" type="password" autocomplete="off" spellcheck="false" />
     <div class="hint">
-      Stored in this browser only, never synced. Calls go straight from your browser
-      to Anthropic.
+      Stored in this browser only, never synced. Requests go straight from your
+      browser to the provider you chose — nothing passes through us.
+    </div>
+
+    <label for="model">Model</label>
+    <input id="model" type="text" spellcheck="false" autocapitalize="off" />
+    <div class="hint">
+      Editable on purpose — model names change faster than this extension ships.
+      If a name stops working, check your provider's model list and paste the new one.
     </div>
 
     <div id="status"></div>
