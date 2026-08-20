@@ -13,6 +13,18 @@
 
 import { PRESETS, DEFAULT_PRESET_ID, findPreset, originFor } from "../lib/providers";
 import type { ProviderConfig } from "../lib/providers";
+import {
+  clearLog,
+  estimateCost,
+  formatCost,
+  readLog,
+  readRates,
+  summarize,
+  type LogEntry,
+  type Rates,
+} from "../lib/capture-log";
+import { localDay } from "../lib/notes-store";
+import { WINDOWS } from "../types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -24,6 +36,11 @@ const keyInput = $<HTMLInputElement>("key");
 const modelInput = $<HTMLInputElement>("model");
 // Not `status`: that name collides with the deprecated global `window.status`.
 const statusEl = $<HTMLDivElement>("status");
+const rateInInput = $<HTMLInputElement>("rate-in");
+const rateOutInput = $<HTMLInputElement>("rate-out");
+const summaryEl = $<HTMLDivElement>("summary");
+const logTable = $<HTMLTableElement>("log-table");
+const clearButton = $<HTMLButtonElement>("clear-log");
 
 let saveTimer: number | undefined;
 
@@ -104,6 +121,134 @@ for (const input of [keyInput, modelInput, baseUrlInput]) {
 baseUrlInput.addEventListener("blur", () => void ensurePermission());
 keyInput.addEventListener("blur", () => void ensurePermission());
 
+/* ------------------------------------------------------------------ log --- */
+
+/** Blank, negative and NaN all mean "no rate entered", which reads as unknown. */
+function currentRates(): Rates {
+  const read = (el: HTMLInputElement) => {
+    const value = Number.parseFloat(el.value);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+  return { inputPerMTok: read(rateInInput), outputPerMTok: read(rateOutInput) };
+}
+
+/** Just the clock. The date is implied — 50 captures is a session, not a month. */
+function clockTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+/** "60s", "prev 60s", "3m" — which window the press asked for. */
+function windowLabel(command: LogEntry["command"]): string {
+  const spec = WINDOWS[command];
+  const length = spec.length >= 180 ? `${spec.length / 60}m` : `${spec.length}s`;
+  return spec.back > 0 ? `prev ${length}` : length;
+}
+
+function cell(row: HTMLTableRowElement, text: string, className?: string): HTMLTableCellElement {
+  const td = row.insertCell();
+  // textContent, never innerHTML: videoTitle comes off a page anyone can publish.
+  td.textContent = text;
+  if (className) td.className = className;
+  return td;
+}
+
+function headerRow(): HTMLTableRowElement {
+  const row = logTable.createTHead().insertRow();
+  for (const [label, className] of [
+    ["Time", ""],
+    ["Window", ""],
+    ["Video", "title"],
+    ["Outcome", ""],
+    ["Took", "num"],
+    ["Tokens", "num"],
+    ["Cost", "num"],
+  ] as const) {
+    const th = document.createElement("th");
+    th.textContent = label;
+    if (className) th.className = className;
+    row.append(th);
+  }
+  return row;
+}
+
+function renderSummary(entries: readonly LogEntry[], rates: Rates): void {
+  summaryEl.replaceChildren();
+  if (entries.length === 0) {
+    summaryEl.textContent = "No captures yet. Press the hotkey on a video.";
+    return;
+  }
+
+  const s = summarize(entries, rates);
+  const parts = [
+    `${s.ok}/${s.total} produced a note`,
+    s.medianLatencyMs === null ? "" : `median ${(s.medianLatencyMs / 1000).toFixed(1)}s`,
+    s.totalCost === null ? "" : `${formatCost(s.totalCost)} total`,
+  ].filter(Boolean);
+
+  const line = document.createElement("div");
+  line.textContent = parts.join(" · ");
+  summaryEl.append(line);
+
+  if (s.failures.length > 0) {
+    const fails = document.createElement("div");
+    fails.className = "fail";
+    fails.textContent = s.failures.map(([name, n]) => `${name} ×${n}`).join(" · ");
+    summaryEl.append(fails);
+  }
+}
+
+function renderLog(entries: readonly LogEntry[], rates: Rates): void {
+  logTable.replaceChildren();
+  renderSummary(entries, rates);
+  if (entries.length === 0) return;
+
+  headerRow();
+  const body = logTable.createTBody();
+
+  for (const entry of entries) {
+    const row = body.insertRow();
+    cell(row, clockTime(entry.id));
+    cell(row, windowLabel(entry.command));
+    cell(row, entry.videoTitle || "—", "title");
+
+    // NothingToNote is not a failure — it is the prompt correctly declining an
+    // ad break. Colouring it red would train the eye to read a working feature
+    // as breakage, which is exactly backwards.
+    const outcome = cell(row, entry.outcome);
+    if (entry.outcome === "NothingToNote") outcome.className = "meh";
+    else if (entry.outcome !== "ok") outcome.className = "bad";
+
+    cell(row, `${(entry.latencyMs / 1000).toFixed(1)}s`, "num");
+    cell(row, entry.usage ? `${entry.usage.input}/${entry.usage.output}` : "—", "num");
+    cell(row, formatCost(estimateCost(entry.usage, rates)), "num");
+  }
+}
+
+async function refreshLog(): Promise<void> {
+  renderLog(await readLog(), currentRates());
+}
+
+for (const input of [rateInInput, rateOutInput]) {
+  input.addEventListener("input", () => {
+    void chrome.storage.local.set({ rates: currentRates() });
+    void refreshLog();
+  });
+}
+
+clearButton.addEventListener("click", async () => {
+  await clearLog();
+  await refreshLog();
+});
+
+// The log is written by the service worker, which the options page cannot see
+// happen. Without this, a capture taken with settings open leaves a stale table
+// and the user concludes nothing was recorded.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes["captureLog"]) void refreshLog();
+});
+
+/* ----------------------------------------------------------------- boot --- */
+
 async function load(): Promise<void> {
   for (const preset of PRESETS) {
     const option = document.createElement("option");
@@ -131,8 +276,15 @@ async function load(): Promise<void> {
 
   const counts = stored.captureCounts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  const today = counts[new Date().toISOString().slice(0, 10)] ?? 0;
+  // localDay, matching what the service worker writes. toISOString would look
+  // up the wrong key for most of the evening in a western timezone.
+  const today = counts[localDay()] ?? 0;
   if (total > 0) say(`${total} notes captured (${today} today).`);
+
+  const rates = await readRates();
+  if (rates.inputPerMTok > 0) rateInInput.value = String(rates.inputPerMTok);
+  if (rates.outputPerMTok > 0) rateOutInput.value = String(rates.outputPerMTok);
+  await refreshLog();
 }
 
 void load();

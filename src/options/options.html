@@ -26,6 +26,30 @@
       .keys { margin-top: 32px; padding-top: 20px;
               border-top: 1px solid rgba(128,128,128,.25); font-size: 13px; }
       .keys div { margin: 6px 0; }
+
+      .log { margin-top: 32px; padding-top: 20px;
+             border-top: 1px solid rgba(128,128,128,.25); }
+      .log h2 { font-size: 15px; margin: 0 0 4px; }
+      .rates { display: flex; gap: 12px; margin: 12px 0 4px; }
+      .rates > div { flex: 1; }
+      .rates label { margin-top: 0; font-weight: 500; font-size: 12px; opacity: .8; }
+      #summary { font-size: 13px; margin: 16px 0 8px; }
+      #summary .fail { opacity: .8; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px;
+              font-variant-numeric: tabular-nums; }
+      th { text-align: left; font-weight: 600; opacity: .6; padding: 4px 6px 4px 0; }
+      td { padding: 4px 6px 4px 0; border-top: 1px solid rgba(128,128,128,.18);
+           vertical-align: top; }
+      /* The title is the only unbounded column; everything else must stay put. */
+      td.title { max-width: 0; width: 100%; overflow: hidden;
+                 text-overflow: ellipsis; white-space: nowrap; }
+      td.num { text-align: right; white-space: nowrap; }
+      .bad { color: #dc2626; }
+      .meh { opacity: .7; }
+      button { font: inherit; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+               border: 1px solid rgba(128,128,128,.4); background: transparent;
+               color: inherit; }
+      .log-actions { margin-top: 14px; }
     </style>
   </head>
   <body>
@@ -56,6 +80,35 @@
     </div>
 
     <div id="status"></div>
+
+    <div class="log">
+      <h2>Recent captures</h2>
+      <div class="hint">
+        The last 50 presses, successes and failures alike. This is the dogfooding
+        instrument: a run of <code>NothingToNote</code> during ad breaks is the
+        prompt working, and a run of them mid-lecture is the prompt failing.
+      </div>
+
+      <div class="rates">
+        <div>
+          <label for="rate-in">Input $ / million tokens</label>
+          <input id="rate-in" type="number" min="0" step="0.01" placeholder="0" />
+        </div>
+        <div>
+          <label for="rate-out">Output $ / million tokens</label>
+          <input id="rate-out" type="number" min="0" step="0.01" placeholder="0" />
+        </div>
+      </div>
+      <div class="hint">
+        Your rates, not a built-in price list — prices drift as fast as model
+        names, and a stale one would quietly report the wrong number. Leave blank
+        to see raw token counts instead.
+      </div>
+
+      <div id="summary"></div>
+      <table id="log-table"></table>
+      <div class="log-actions"><button id="clear-log" type="button">Clear log</button></div>
+    </div>
 
     <div class="keys">
       <div><kbd>Alt</kbd> <kbd>Shift</kbd> <kbd>N</kbd> — note the last 60 seconds</div>
