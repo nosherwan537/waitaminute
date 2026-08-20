@@ -15,7 +15,7 @@
 import { build } from "vite";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { rm, cp } from "node:fs/promises";
+import { rm, cp, readFile, writeFile } from "node:fs/promises";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -53,5 +53,41 @@ for (const entry of ENTRIES) {
 // Static assets that manifest.json and the options page reference by path.
 await cp(resolve(root, "public"), resolve(root, "dist"), { recursive: true });
 await cp(resolve(root, "src/options/options.html"), resolve(root, "dist/options/options.html"));
+
+/**
+ * Inject the Google OAuth client ID.
+ *
+ * `chrome.identity.getAuthToken` reads the client ID out of the manifest, and it
+ * is specific to whoever built this — a personal Google Cloud project. Committing
+ * one would mean every user shares a stranger's OAuth app and its quota. So the
+ * real value lives in a gitignored `oauth.local.json` and gets stamped in here:
+ *
+ *   { "clientId": "…apps.googleusercontent.com", "key": "<optional>" }
+ *
+ * `key` pins the extension ID, which getAuthToken requires to be stable —
+ * without it an unpacked extension gets a fresh ID on some reloads and Google
+ * rejects the redirect URI it registered against.
+ *
+ * With no file present the build still succeeds and the extension runs
+ * local-only. `isConfigured()` sees the placeholder and the Docs path stays off,
+ * rather than failing at the first capture with something cryptic.
+ */
+const manifestPath = resolve(root, "dist/manifest.json");
+const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+let oauth;
+try {
+  oauth = JSON.parse(await readFile(resolve(root, "oauth.local.json"), "utf8"));
+} catch {
+  oauth = undefined;
+}
+
+if (oauth?.clientId) {
+  manifest.oauth2.client_id = oauth.clientId;
+  if (oauth.key) manifest.key = oauth.key;
+  await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+  console.log("oauth  -> client id injected");
+} else {
+  console.log("oauth  -> no oauth.local.json; Google Docs disabled, local .md only");
+}
 
 console.log("built -> dist/");

@@ -9,12 +9,14 @@
  * into `generateNote`.
  */
 
-import { formatNote, generateNote, spentOf } from "../lib/notegen";
+import { formatNote, generateNote, spentOf, type Note } from "../lib/notegen";
 import { appendLog, type LogEntry } from "../lib/capture-log";
 import { isNamedError, NamedError } from "../lib/errors";
 import { DEFAULT_PRESET_ID, type ProviderConfig } from "../lib/providers";
 import { appendNote, localDay } from "../lib/notes-store";
 import { writeDayFile } from "./local-sink";
+import { appendToDoc, readDocRef } from "./docs-sink";
+import { isConfigured } from "./google-auth";
 import type { CommandName, TranscriptSlice, ToastMessage } from "../types";
 
 type SliceResponse =
@@ -105,8 +107,11 @@ chrome.commands.onCommand.addListener(async (command) => {
       command,
     });
 
-    // A failed disk write is a warning, not a failed capture: the note is safe
-    // and GoogleDocsSink (step 6) will be the canonical destination anyway.
+    // Docs is the canonical destination; the local .md stays the safety net.
+    // Both are written, and neither failing loses the note — storage already has it.
+    const docFailure = await saveToDoc(note, slice);
+
+    // A failed disk write is a warning, not a failed capture: the note is safe.
     let warning: string | undefined;
     try {
       await writeDayFile(notes, day);
@@ -115,13 +120,17 @@ chrome.commands.onCommand.addListener(async (command) => {
       console.error("[heystop] LocalWriteFailed", cause);
     }
 
+    // A Docs problem outranks a local one in the toast: Docs is where the user
+    // will go looking, and the local copy is the thing that already worked.
+    const problem = docFailure ?? (warning ? { name: "LocalWriteFailed", text: warning } : undefined);
+
     // Logged before the toast: the toast can fail on a closed tab, and losing
     // the confirmation must not also lose the record that the capture happened.
-    await logCapture(warning ? "LocalWriteFailed" : "ok", { usage, model });
+    await logCapture(problem?.name ?? "ok", { usage, model });
 
     await toast(tabId, {
-      state: warning ? "error" : "success",
-      text: warning ?? "Noted",
+      state: problem ? "error" : "success",
+      text: problem?.text ?? "Noted",
       count: await bumpCount(),
     });
   } catch (error) {
@@ -150,6 +159,37 @@ chrome.commands.onCommand.addListener(async (command) => {
     if (OPENS_OPTIONS.has(named.name_)) chrome.runtime.openOptionsPage();
   }
 });
+
+/**
+ * Write the note to Google Docs. Returns the failure to report, or undefined
+ * when there was nothing to do or it worked.
+ *
+ * JUDGMENT CALL — silence when Google was never connected. The registry maps
+ * `NotAuthorized` to "Connect Google to save notes", but firing that on every
+ * capture would nag a user who is deliberately running local-only, which is a
+ * complete product on its own (PLAN.md step 5 shipped it that way). So the
+ * prompt appears only once a doc ref exists: the user opted in, and now
+ * something is broken, which IS worth interrupting for.
+ */
+async function saveToDoc(
+  note: Note,
+  slice: TranscriptSlice,
+): Promise<{ name: string; text: string } | undefined> {
+  if (!isConfigured()) return undefined;
+  const connected = await readDocRef();
+  if (!connected) return undefined;
+
+  try {
+    await appendToDoc(note, slice);
+    return undefined;
+  } catch (cause) {
+    const named: NamedError = isNamedError(cause)
+      ? cause
+      : new NamedError("DocsWriteFailed", "Couldn't write to your doc", false, cause);
+    console.error(`[heystop] ${named.name_}`, named.userMessage, named.cause ?? "");
+    return { name: named.name_, text: named.userMessage };
+  }
+}
 
 /** Captures completed today. This is the dogfooding instrument, not decoration. */
 async function bumpCount(): Promise<number> {

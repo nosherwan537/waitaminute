@@ -6,3 +6,6 @@ dist/
 # Captured notes. LocalMdSink writes to Downloads/heystop/<day>.md, which is
 # this repo. Day files are personal transcripts and must never be committed.
 20*.md
+
+# Personal Google Cloud OAuth client. See scripts/build.mjs.
+oauth.local.json
