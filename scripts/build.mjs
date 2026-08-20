@@ -68,9 +68,10 @@ await cp(resolve(root, "src/options/options.html"), resolve(root, "dist/options/
  * without it an unpacked extension gets a fresh ID on some reloads and Google
  * rejects the redirect URI it registered against.
  *
- * With no file present the build still succeeds and the extension runs
- * local-only. `isConfigured()` sees the placeholder and the Docs path stays off,
- * rather than failing at the first capture with something cryptic.
+ * With no file present the oauth2 block is REMOVED rather than left holding a
+ * placeholder. Chrome validates manifest keys at load time and a bogus client ID
+ * is not worth betting the whole extension on — a missing block is a state
+ * `isConfigured()` already understands, so Docs stays off and notes go local.
  */
 const manifestPath = resolve(root, "dist/manifest.json");
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -84,10 +85,11 @@ try {
 if (oauth?.clientId) {
   manifest.oauth2.client_id = oauth.clientId;
   if (oauth.key) manifest.key = oauth.key;
-  await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
   console.log("oauth  -> client id injected");
 } else {
+  delete manifest.oauth2;
   console.log("oauth  -> no oauth.local.json; Google Docs disabled, local .md only");
 }
+await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 
 console.log("built -> dist/");
