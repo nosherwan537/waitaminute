@@ -7,7 +7,9 @@
     "storage",
     "downloads",
     "identity",
-    "scripting"
+    "scripting",
+    "offscreen",
+    "tabCapture"
   ],
   "host_permissions": [
     "https://www.youtube.com/*"
@@ -83,5 +85,8 @@
       "https://www.googleapis.com/auth/documents",
       "https://www.googleapis.com/auth/drive.file"
     ]
+  },
+  "action": {
+    "default_title": "Enable audio capture on this tab"
   }
 }

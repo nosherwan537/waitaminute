@@ -100,6 +100,12 @@ export interface Preset {
   readonly keyOptional?: boolean;
   /** One line under the fields telling the user where to find their model list. */
   readonly note?: string;
+  /**
+   * Speech-to-text model for the audio fallback, when this service offers one at
+   * the OpenAI `/audio/transcriptions` path. Absent means no audio support —
+   * which is a fact about the service, not a failure, and the toast says so.
+   */
+  readonly audioModel?: string;
 }
 
 /**

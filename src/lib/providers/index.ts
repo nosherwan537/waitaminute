@@ -14,6 +14,8 @@ import type {
 
 export * from "./types";
 export { PRESETS, DEFAULT_PRESET_ID, findPreset } from "./presets";
+export { resolveTranscription, transcribe, buildTranscriptionForm } from "./transcribe";
+export type { TranscriptionTarget } from "./transcribe";
 
 const ADAPTERS: Record<AdapterId, Adapter> = {
   anthropic: anthropicAdapter,

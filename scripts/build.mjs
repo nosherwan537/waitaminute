@@ -24,6 +24,7 @@ const ENTRIES = [
   { src: "src/content/content-script.ts", out: "content/content-script", format: "iife" },
   { src: "src/background/service-worker.ts", out: "background/service-worker", format: "es" },
   { src: "src/options/options.ts", out: "options/options", format: "es" },
+  { src: "src/offscreen/recorder.ts", out: "offscreen/recorder", format: "es" },
 ];
 
 await rm(resolve(root, "dist"), { recursive: true, force: true });
@@ -53,6 +54,7 @@ for (const entry of ENTRIES) {
 // Static assets that manifest.json and the options page reference by path.
 await cp(resolve(root, "public"), resolve(root, "dist"), { recursive: true });
 await cp(resolve(root, "src/options/options.html"), resolve(root, "dist/options/options.html"));
+await cp(resolve(root, "src/offscreen/offscreen.html"), resolve(root, "dist/offscreen/offscreen.html"));
 
 /**
  * Inject the Google OAuth client ID.

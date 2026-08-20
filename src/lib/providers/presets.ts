@@ -31,6 +31,7 @@ export const PRESETS: readonly Preset[] = [
     defaultModel: "gpt-4.1-mini",
     keyHint: "sk-...",
     origin: "https://api.openai.com/*",
+    audioModel: "whisper-1",
     note: "Keys at platform.openai.com. Check their model list for current names.",
   },
   {
@@ -61,6 +62,7 @@ export const PRESETS: readonly Preset[] = [
     defaultModel: "llama-3.3-70b-versatile",
     keyHint: "gsk_...",
     origin: "https://api.groq.com/*",
+    audioModel: "whisper-large-v3-turbo",
     note: "Keys at console.groq.com. Check their model list for current names.",
   },
   {

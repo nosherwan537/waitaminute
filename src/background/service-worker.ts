@@ -18,6 +18,9 @@ import { writeDayFile } from "./local-sink";
 import { appendToDoc, readDocRef } from "./docs-sink";
 import { isConfigured } from "./google-auth";
 import { syncContentScripts } from "./site-registry";
+import { armTab, armedTab, audioSlice, disarm, wavBlob } from "./audio-capture";
+import { resolveTranscription, transcribe } from "../lib/providers";
+import { WINDOWS } from "../types";
 import type { CommandName, TranscriptSlice, ToastMessage } from "../types";
 
 type SliceResponse =
@@ -28,7 +31,7 @@ function isCommand(name: string): name is CommandName {
   return name === "capture-now" || name === "capture-previous" || name === "capture-long";
 }
 
-async function toast(tabId: number, msg: Omit<ToastMessage, "kind">): Promise<void> {
+async function toastTo(tabId: number, msg: Omit<ToastMessage, "kind">): Promise<void> {
   try {
     await chrome.tabs.sendMessage(tabId, { kind: "toast", ...msg } satisfies ToastMessage);
   } catch {
@@ -69,9 +72,19 @@ chrome.commands.onCommand.addListener(async (command) => {
     return;
   }
 
-  if (!response?.ok) return; // the content script already showed the right toast
-
-  const { slice } = response;
+  // CaptionsUnavailable is the one refusal worth overriding: it is exactly the
+  // case PLAN.md step 11 exists for. Every other refusal (debounced, no video,
+  // empty window) is correct and already toasted.
+  let slice: TranscriptSlice;
+  if (response?.ok) {
+    slice = response.slice;
+  } else if (response?.reason === "CaptionsUnavailable" && (await armedTab()) === tabId) {
+    const fromAudio = await sliceFromAudio(tabId, command);
+    if (!fromAudio) return; // sliceFromAudio toasted the reason
+    slice = fromAudio;
+  } else {
+    return;
+  }
 
   // Started before the provider call so the log measures what the user feels:
   // press to outcome, retries and disk write included.
@@ -129,7 +142,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     // the confirmation must not also lose the record that the capture happened.
     await logCapture(problem?.name ?? "ok", { usage, model });
 
-    await toast(tabId, {
+    await toastTo(tabId, {
       state: problem ? "error" : "success",
       text: problem?.text ?? "Noted",
       count: await bumpCount(),
@@ -152,13 +165,87 @@ chrome.commands.onCommand.addListener(async (command) => {
 
     // NothingToNote is a correct outcome, not a failure: the user pressed during
     // an ad or dead air. Say so calmly and write nothing at all.
-    await toast(tabId, {
+    await toastTo(tabId, {
       state: named.name_ === "NothingToNote" ? "info" : "error",
       text: named.userMessage,
     });
 
     if (OPENS_OPTIONS.has(named.name_)) chrome.runtime.openOptionsPage();
   }
+});
+
+/**
+ * Transcribe the last N seconds of tab audio into a slice.
+ *
+ * Same `TranscriptSlice` shape the caption path produces, which is the whole
+ * point of the abstraction: everything downstream — the prompt, the note format,
+ * both sinks, the capture log — was written once and does not know which source
+ * it is looking at.
+ */
+async function sliceFromAudio(
+  tabId: number,
+  command: CommandName,
+): Promise<TranscriptSlice | undefined> {
+  const spec = WINDOWS[command];
+  try {
+    await toastTo(tabId, { state: "processing", text: "No captions — using audio..." });
+
+    const audio = await audioSlice(tabId, spec.back, spec.length);
+    const config = await loadConfig();
+    const text = await transcribe(resolveTranscription(config), wavBlob(audio.wavBase64));
+
+    const tab = await chrome.tabs.get(tabId);
+    const url = tab.url ?? "";
+    // The ring holds the last N seconds of REAL TIME, which is the playhead only
+    // while the video plays at 1x and never buffers. Timestamps from the audio
+    // path are therefore approximate, and the deep link is a best effort — worth
+    // having, not worth trusting to the second.
+    const endSec = Math.max(0, audio.seconds);
+    return {
+      text,
+      startSec: 0,
+      endSec,
+      videoTitle: (tab.title ?? "Untitled").replace(/\s*[-|·—]\s*(YouTube|Vimeo)\s*$/i, ""),
+      videoUrl: url,
+      deepLink: url,
+      source: "audio",
+    };
+  } catch (error) {
+    const named: NamedError = isNamedError(error)
+      ? error
+      : new NamedError("CaptionsUnavailable", "Couldn't capture audio", false, error);
+    console.error(`[heystop] ${named.name_}`, named.userMessage, named.cause ?? "");
+    await toastTo(tabId, { state: "error", text: named.userMessage });
+    return undefined;
+  }
+}
+
+/** Arm/disarm audio for a tab. The click IS the user gesture the API requires. */
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab.id) return;
+  const tabId = tab.id;
+
+  if ((await armedTab()) === tabId) {
+    await disarm();
+    await toastTo(tabId, { state: "info", text: "Audio capture off" });
+    return;
+  }
+
+  try {
+    await armTab(tabId);
+    // Honest about the platform limit: only one offscreen document may exist,
+    // so arming this tab took audio away from any other.
+    await toastTo(tabId, { state: "success", text: "Audio capture on for this tab" });
+  } catch (error) {
+    const text = isNamedError(error) ? error.userMessage : "Couldn't capture this tab's audio";
+    console.error("[heystop] armTab", error);
+    await toastTo(tabId, { state: "error", text });
+  }
+});
+
+/** The armed tab closing must release the capture, or the indicator never clears. */
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  if ((await armedTab()) === tabId) await disarm();
 });
 
 /**
