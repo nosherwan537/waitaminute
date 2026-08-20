@@ -34,8 +34,12 @@ export function isConfigured(): boolean {
   return Boolean(oauth2?.client_id) && !oauth2!.client_id.startsWith("REPLACE_ME");
 }
 
-/** Chrome returns a bare string on older versions and an object on newer ones. */
-function tokenOf(result: unknown): string | undefined {
+/**
+ * Chrome returns a bare string on older versions and an object on newer ones.
+ * Exported for tests: getting this wrong yields `Bearer [object Object]`, which
+ * fails as an opaque 401 three layers away from the cause.
+ */
+export function tokenOf(result: unknown): string | undefined {
   if (typeof result === "string") return result || undefined;
   if (typeof result === "object" && result !== null) {
     const token = (result as { token?: unknown }).token;

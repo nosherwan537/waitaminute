@@ -50,6 +50,12 @@
                border: 1px solid rgba(128,128,128,.4); background: transparent;
                color: inherit; }
       .log-actions { margin-top: 14px; }
+
+      .google { margin-top: 32px; padding-top: 20px;
+                border-top: 1px solid rgba(128,128,128,.25); }
+      .google h2 { font-size: 15px; margin: 0 0 4px; }
+      .google-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+      #doc-state { font-size: 13px; }
     </style>
   </head>
   <body>
@@ -80,6 +86,23 @@
     </div>
 
     <div id="status"></div>
+
+    <div class="google">
+      <h2>Google Docs</h2>
+      <div class="hint">
+        The canonical destination. Notes keep landing in a local Markdown file
+        either way, so this is safe to leave disconnected.
+      </div>
+      <div class="google-row">
+        <button id="connect-google" type="button">Connect Google</button>
+        <button id="disconnect-google" type="button" hidden>Disconnect</button>
+        <span id="doc-state"></span>
+      </div>
+      <div class="hint">
+        Scopes requested: <code>documents</code> and <code>drive.file</code> —
+        access to files this extension created, never the rest of your Drive.
+      </div>
+    </div>
 
     <div class="log">
       <h2>Recent captures</h2>

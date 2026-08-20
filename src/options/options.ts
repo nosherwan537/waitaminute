@@ -24,6 +24,9 @@ import {
   type Rates,
 } from "../lib/capture-log";
 import { localDay } from "../lib/notes-store";
+import { connect, readDocRef, type DocRef } from "../background/docs-sink";
+import { disconnect, isConfigured } from "../background/google-auth";
+import { isNamedError } from "../lib/errors";
 import { WINDOWS } from "../types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -41,6 +44,9 @@ const rateOutInput = $<HTMLInputElement>("rate-out");
 const summaryEl = $<HTMLDivElement>("summary");
 const logTable = $<HTMLTableElement>("log-table");
 const clearButton = $<HTMLButtonElement>("clear-log");
+const connectButton = $<HTMLButtonElement>("connect-google");
+const disconnectButton = $<HTMLButtonElement>("disconnect-google");
+const docStateEl = $<HTMLSpanElement>("doc-state");
 
 let saveTimer: number | undefined;
 
@@ -120,6 +126,70 @@ for (const input of [keyInput, modelInput, baseUrlInput]) {
 // on blur rather than on every keystroke.
 baseUrlInput.addEventListener("blur", () => void ensurePermission());
 keyInput.addEventListener("blur", () => void ensurePermission());
+
+/* --------------------------------------------------------------- google --- */
+
+/** Origins the Docs calls need. Requested on click, where the gesture exists. */
+const GOOGLE_ORIGINS = ["https://docs.googleapis.com/*", "https://www.googleapis.com/*"];
+
+function renderDoc(doc: DocRef | undefined): void {
+  docStateEl.replaceChildren();
+  disconnectButton.hidden = !doc;
+  connectButton.textContent = doc ? "Reconnect" : "Connect Google";
+
+  if (!isConfigured()) {
+    // Honest about a build-time gap rather than letting the click fail with an
+    // opaque OAuth error. See scripts/build.mjs.
+    connectButton.disabled = true;
+    docStateEl.textContent = "Not available in this build — no OAuth client ID.";
+    return;
+  }
+  if (!doc) {
+    docStateEl.textContent = "Not connected. Notes are saved locally only.";
+    return;
+  }
+
+  docStateEl.append("Saving to ");
+  const link = document.createElement("a");
+  link.href = doc.url;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  // textContent: the title comes back from Google and is user-editable.
+  link.textContent = doc.title;
+  docStateEl.append(link);
+}
+
+connectButton.addEventListener("click", async () => {
+  connectButton.disabled = true;
+  try {
+    if (!(await chrome.permissions.request({ origins: GOOGLE_ORIGINS }))) {
+      say("Access to Google was declined — notes stay local.", true);
+      return;
+    }
+    const doc = await connect();
+    renderDoc(doc);
+    say(`Connected. Notes will append to "${doc.title}".`);
+  } catch (error) {
+    // AuthCancelled is a decision, not a fault: the user closed the window.
+    const cancelled = isNamedError(error) && error.name_ === "AuthCancelled";
+    say(
+      isNamedError(error) ? error.userMessage : "Couldn't connect to Google.",
+      !cancelled,
+    );
+    console.error("[heystop] connect failed", error);
+  } finally {
+    connectButton.disabled = !isConfigured();
+  }
+});
+
+disconnectButton.addEventListener("click", async () => {
+  await disconnect();
+  // The doc ref is dropped too, so a later reconnect does not silently resume
+  // appending to a document the user thought they had detached from.
+  await chrome.storage.local.remove("doc");
+  renderDoc(undefined);
+  say("Disconnected. Notes are saved locally only.");
+});
 
 /* ------------------------------------------------------------------ log --- */
 
@@ -280,6 +350,8 @@ async function load(): Promise<void> {
   // up the wrong key for most of the evening in a western timezone.
   const today = counts[localDay()] ?? 0;
   if (total > 0) say(`${total} notes captured (${today} today).`);
+
+  renderDoc(await readDocRef());
 
   const rates = await readRates();
   if (rates.inputPerMTok > 0) rateInInput.value = String(rates.inputPerMTok);
