@@ -56,6 +56,17 @@
       .google h2 { font-size: 15px; margin: 0 0 4px; }
       .google-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
       #doc-state { font-size: 13px; }
+
+      .sites { margin-top: 32px; padding-top: 20px;
+               border-top: 1px solid rgba(128,128,128,.25); }
+      .sites h2 { font-size: 15px; margin: 0 0 4px; }
+      .site-add { display: flex; gap: 8px; margin-top: 12px; }
+      .site-add input { flex: 1; }
+      #site-list { list-style: none; padding: 0; margin: 12px 0 0; font-size: 13px; }
+      #site-list li { display: flex; align-items: center; justify-content: space-between;
+                      gap: 12px; padding: 6px 0;
+                      border-top: 1px solid rgba(128,128,128,.18); }
+      #site-list button { padding: 2px 8px; font-size: 12px; }
     </style>
   </head>
   <body>
@@ -102,6 +113,24 @@
         Scopes requested: <code>documents</code> and <code>drive.file</code> —
         access to files this extension created, never the rest of your Drive.
       </div>
+    </div>
+
+    <div class="sites">
+      <h2>Other sites</h2>
+      <div class="hint">
+        YouTube works out of the box. For anything else — Vimeo, a course
+        platform, a university player — add it here. It reads the video's own
+        subtitle track, so it works wherever the player uses standard captions.
+      </div>
+      <div class="site-add">
+        <input id="site-input" type="text" placeholder="vimeo.com" spellcheck="false" />
+        <button id="site-add" type="button">Add site</button>
+      </div>
+      <div class="hint">
+        Each site asks for its own permission. Nothing is granted until you say so,
+        and removing a site hands the permission back.
+      </div>
+      <ul id="site-list"></ul>
     </div>
 
     <div class="log">

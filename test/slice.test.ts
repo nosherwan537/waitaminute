@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { slice, evictOldCues, formatTimestamp, deepLink } from "../src/lib/slice";
+import { slice, evictOldCues, formatTimestamp, deepLink, deepLinkFor } from "../src/lib/slice";
 import { WINDOWS, type Cue } from "../src/types";
 
 /** Cues at 0-5, 5-10, 10-15, ... each labelled with its start second. */
@@ -162,5 +162,46 @@ describe("deepLink", () => {
 
   it("returns the input unchanged when the url is unparseable", () => {
     expect(deepLink("not a url", 90)).toBe("not a url");
+  });
+});
+
+describe("deepLinkFor", () => {
+  it("uses YouTube's query parameter on YouTube", () => {
+    expect(deepLinkFor("https://www.youtube.com/watch?v=abc", 90)).toBe(
+      "https://www.youtube.com/watch?v=abc&t=90s",
+    );
+  });
+
+  it("uses a fragment on Vimeo, whose player ignores a query parameter", () => {
+    expect(deepLinkFor("https://vimeo.com/12345", 90)).toBe("https://vimeo.com/12345#t=90s");
+  });
+
+  it("falls back to the W3C media fragment everywhere else", () => {
+    expect(deepLinkFor("https://example.edu/lecture/3", 90)).toBe(
+      "https://example.edu/lecture/3#t=90",
+    );
+  });
+
+  it("replaces a stale fragment instead of appending to it", () => {
+    // The failure this guards: every note in a session linking to the same
+    // moment, because the first #t= was never cleared.
+    expect(deepLinkFor("https://example.edu/lecture/3#t=10", 90)).toBe(
+      "https://example.edu/lecture/3#t=90",
+    );
+  });
+
+  it("keeps the existing query string intact", () => {
+    expect(deepLinkFor("https://example.edu/watch?id=7&hd=1", 5)).toBe(
+      "https://example.edu/watch?id=7&hd=1#t=5",
+    );
+  });
+
+  it("floors fractional seconds and clamps negatives", () => {
+    expect(deepLinkFor("https://example.edu/v", 90.9)).toContain("#t=90");
+    expect(deepLinkFor("https://example.edu/v", -5)).toContain("#t=0");
+  });
+
+  it("returns an unparseable url unchanged rather than throwing", () => {
+    expect(deepLinkFor("not a url", 90)).toBe("not a url");
   });
 });

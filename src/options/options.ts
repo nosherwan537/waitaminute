@@ -27,6 +27,7 @@ import { localDay } from "../lib/notes-store";
 import { connect, readDocRef, type DocRef } from "../background/docs-sink";
 import { disconnect, isConfigured } from "../background/google-auth";
 import { isNamedError } from "../lib/errors";
+import { addSite, readSites, removeSite, toMatchPattern } from "../background/site-registry";
 import { WINDOWS } from "../types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -47,6 +48,9 @@ const clearButton = $<HTMLButtonElement>("clear-log");
 const connectButton = $<HTMLButtonElement>("connect-google");
 const disconnectButton = $<HTMLButtonElement>("disconnect-google");
 const docStateEl = $<HTMLSpanElement>("doc-state");
+const siteInput = $<HTMLInputElement>("site-input");
+const siteAddButton = $<HTMLButtonElement>("site-add");
+const siteList = $<HTMLUListElement>("site-list");
 
 let saveTimer: number | undefined;
 
@@ -126,6 +130,56 @@ for (const input of [keyInput, modelInput, baseUrlInput]) {
 // on blur rather than on every keystroke.
 baseUrlInput.addEventListener("blur", () => void ensurePermission());
 keyInput.addEventListener("blur", () => void ensurePermission());
+
+/* ---------------------------------------------------------------- sites --- */
+
+/** `https://vimeo.com/*` reads better as `vimeo.com` in a list of sites. */
+function siteLabel(pattern: string): string {
+  return pattern.replace(/^https?:\/\//, "").replace(/\/\*$/, "");
+}
+
+function renderSites(sites: readonly string[]): void {
+  siteList.replaceChildren();
+  for (const pattern of sites) {
+    const item = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = siteLabel(pattern);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", async () => {
+      renderSites(await removeSite(pattern));
+      say(`Removed ${siteLabel(pattern)}.`);
+    });
+    item.append(name, remove);
+    siteList.append(item);
+  }
+}
+
+siteAddButton.addEventListener("click", async () => {
+  let pattern: string;
+  try {
+    pattern = toMatchPattern(siteInput.value);
+  } catch (error) {
+    say(isNamedError(error) ? error.userMessage : "That doesn't look like a site address", true);
+    return;
+  }
+
+  // The request must happen in the click handler itself: Chrome requires a user
+  // gesture, and awaiting anything else first can spend it.
+  if (!(await chrome.permissions.request({ origins: [pattern] }))) {
+    say(`Access to ${siteLabel(pattern)} was declined.`, true);
+    return;
+  }
+
+  renderSites(await addSite(pattern));
+  siteInput.value = "";
+  say(`Added ${siteLabel(pattern)}. Reload any open tab there.`);
+});
+
+siteInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") siteAddButton.click();
+});
 
 /* --------------------------------------------------------------- google --- */
 
@@ -352,6 +406,7 @@ async function load(): Promise<void> {
   if (total > 0) say(`${total} notes captured (${today} today).`);
 
   renderDoc(await readDocRef());
+  renderSites(await readSites());
 
   const rates = await readRates();
   if (rates.inputPerMTok > 0) rateInInput.value = String(rates.inputPerMTok);

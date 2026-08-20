@@ -74,3 +74,37 @@ export function deepLink(videoUrl: string, seconds: number): string {
     return videoUrl;
   }
 }
+
+/**
+ * Pure. The deep link for whatever site the video is on.
+ *
+ * There is no universal answer, so this is honest about the three cases rather
+ * than pretending one syntax works everywhere:
+ *
+ *   YouTube          `?t=90s`   — its own query parameter
+ *   Vimeo            `#t=90s`   — its player reads a fragment, not a query
+ *   everything else  `#t=90`    — the W3C media-fragment standard, which
+ *                                 browsers honour natively for a direct video
+ *                                 URL and many players honour for a page
+ *
+ * The fallback is a best effort and will not seek on every site. That is worth
+ * it: a link that lands on the right page is still most of the value, and the
+ * timestamp is written into the note body regardless.
+ */
+export function deepLinkFor(videoUrl: string, seconds: number): string {
+  const at = Math.floor(Math.max(0, seconds));
+  let url: URL;
+  try {
+    url = new URL(videoUrl);
+  } catch {
+    return videoUrl;
+  }
+
+  const host = url.hostname.replace(/^www\./, "");
+  if (host.endsWith("youtube.com") || host === "youtu.be") return deepLink(videoUrl, seconds);
+
+  // A fragment replaces any existing one; leaving a stale `#t=` behind would
+  // send every note in a session to the same moment.
+  url.hash = host.endsWith("vimeo.com") ? `t=${at}s` : `t=${at}`;
+  return url.toString();
+}

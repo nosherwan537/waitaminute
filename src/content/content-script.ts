@@ -7,8 +7,16 @@
  * user might load a lecture and not press the hotkey for an hour.
  */
 
-import { slice, evictOldCues, deepLink } from "../lib/slice";
-import { WINDOWS, type Cue, type InterceptorMessage, type ToastMessage, type CommandName } from "../types";
+import { slice, evictOldCues, deepLinkFor } from "../lib/slice";
+import { readTrackCues } from "./track-source";
+import {
+  WINDOWS,
+  type Cue,
+  type InterceptorMessage,
+  type ToastMessage,
+  type CommandName,
+  type TranscriptSlice,
+} from "../types";
 import { showToast } from "./toast";
 
 /** Keyed by cue start time, so re-fetching the same track doesn't duplicate text. */
@@ -95,6 +103,85 @@ setInterval(() => {
 let lastCapture = 0;
 const DEBOUNCE_MS = 2000;
 
+/** Strip the site's own suffix so the note heading reads as the lecture's name. */
+function videoTitle(): string {
+  return document.title.replace(/\s*[-|·—]\s*(YouTube|Vimeo|Coursera|edX)\s*$/i, "").trim();
+}
+
+type SliceReply = { ok: true; slice: TranscriptSlice } | { ok: false; reason: string };
+
+/**
+ * Produce a slice, or the reason there isn't one.
+ *
+ * Async because the generic TextTrack source (non-YouTube sites) has to wake a
+ * track and wait for its cues. That costs a few hundred milliseconds on the
+ * first capture of a page, which premise 7 explicitly makes affordable: the user
+ * pressed the key and kept watching.
+ */
+async function buildSlice(command: CommandName): Promise<SliceReply> {
+  const video = currentVideo();
+  if (!video) {
+    showToast("error", "No video on this page");
+    return { ok: false, reason: "NoVideo" };
+  }
+
+  let cues = [...cueIndex.values()];
+  let language = trackLanguage;
+
+  if (cues.length === 0) {
+    // No interceptor cues. Either this is not YouTube, or YouTube's path failed
+    // — the DOM reader is worth trying in both cases before giving up.
+    const fromTracks = await readTrackCues(video);
+    if (fromTracks?.cues.length) {
+      cues = fromTracks.cues;
+      language = { code: fromTracks.language, name: fromTracks.languageName };
+      // Cache it: a lecture's cues do not change, and the second capture on a
+      // page should not pay the wake-up cost again.
+      for (const cue of cues) cueIndex.set(cue.start, cue);
+      trackLanguage = language;
+    }
+  }
+
+  if (cues.length === 0) {
+    // Four different situations, four different things worth saying. Lumping
+    // them together is how a tool teaches users to distrust its messages.
+    if (captionsAvailable === false) {
+      showToast("error", "This video has no captions");
+    } else if (captionsAvailable === null && isYouTube()) {
+      showToast("info", "Still loading captions — try again in a second");
+    } else {
+      showToast("error", "Couldn't read this video's captions");
+    }
+    return { ok: false, reason: "CaptionsUnavailable" };
+  }
+
+  const result = slice(cues, video.currentTime, WINDOWS[command]);
+  if (result.isEmpty) {
+    showToast("info", "Nothing said in that window");
+    return { ok: false, reason: "EmptySlice" };
+  }
+
+  showToast("processing", "Noting that...");
+  return {
+    ok: true,
+    slice: {
+      text: result.text,
+      startSec: result.startSec,
+      endSec: result.endSec,
+      videoTitle: videoTitle(),
+      videoUrl: location.href.split("&t=")[0] ?? location.href,
+      deepLink: deepLinkFor(location.href, result.startSec),
+      language: language.code,
+      languageName: language.name,
+      source: "captions",
+    },
+  };
+}
+
+function isYouTube(): boolean {
+  return location.hostname.endsWith("youtube.com");
+}
+
 chrome.runtime.onMessage.addListener((msg: { kind: string; command?: CommandName } | ToastMessage, _sender, sendResponse) => {
   if (msg.kind === "toast") {
     const t = msg as ToastMessage;
@@ -113,52 +200,14 @@ chrome.runtime.onMessage.addListener((msg: { kind: string; command?: CommandName
     }
     lastCapture = now;
 
-    const video = currentVideo();
-    if (!video) {
-      sendResponse({ ok: false, reason: "NoVideo" });
-      showToast("error", "No video on this page");
-      return;
-    }
-
-    if (cueIndex.size === 0) {
-      // Three different situations, three different things worth saying. Lumping
-      // them together is how a tool teaches users to distrust its messages.
-      if (captionsAvailable === false) {
-        sendResponse({ ok: false, reason: "CaptionsUnavailable" });
-        showToast("error", "This video has no captions");
-      } else if (captionsAvailable === null) {
-        sendResponse({ ok: false, reason: "CaptionsUnavailable" });
-        showToast("info", "Still loading captions — try again in a second");
-      } else {
-        sendResponse({ ok: false, reason: "CaptionsUnavailable" });
-        showToast("error", "Couldn't read this video's captions");
-      }
-      return;
-    }
-
-    const result = slice([...cueIndex.values()], video.currentTime, WINDOWS[command]);
-    if (result.isEmpty) {
-      sendResponse({ ok: false, reason: "EmptySlice" });
-      showToast("info", "Nothing said in that window");
-      return;
-    }
-
-    showToast("processing", "Noting that...");
-    sendResponse({
-      ok: true,
-      slice: {
-        text: result.text,
-        startSec: result.startSec,
-        endSec: result.endSec,
-        videoTitle: document.title.replace(/ - YouTube$/, ""),
-        videoUrl: location.href.split("&t=")[0] ?? location.href,
-        deepLink: deepLink(location.href, result.startSec),
-        language: trackLanguage.code,
-        languageName: trackLanguage.name,
-      },
-    });
-    return;
+    // `return true` keeps the message channel open for the async reply. Without
+    // it Chrome closes the port the moment this listener returns and the service
+    // worker's sendMessage resolves with undefined — a capture that silently
+    // does nothing.
+    void buildSlice(command).then(sendResponse);
+    return true;
   }
+  return;
 });
 
 console.debug("[heystop] content script ready");

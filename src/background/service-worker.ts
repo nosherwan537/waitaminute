@@ -17,6 +17,7 @@ import { appendNote, localDay } from "../lib/notes-store";
 import { writeDayFile } from "./local-sink";
 import { appendToDoc, readDocRef } from "./docs-sink";
 import { isConfigured } from "./google-auth";
+import { syncContentScripts } from "./site-registry";
 import type { CommandName, TranscriptSlice, ToastMessage } from "../types";
 
 type SliceResponse =
@@ -210,5 +211,13 @@ async function bumpCount(): Promise<number> {
   await chrome.storage.local.set({ captureCounts: trimmed });
   return next;
 }
+
+// Runtime-registered content scripts survive a browser restart via
+// `persistAcrossSessions`, but not an extension update or a permission the user
+// revoked from Chrome's own UI. Re-syncing on both events is what keeps the
+// stored site list and the actually-registered scripts from drifting apart.
+chrome.runtime.onStartup.addListener(() => void syncContentScripts());
+chrome.runtime.onInstalled.addListener(() => void syncContentScripts());
+chrome.permissions.onRemoved.addListener(() => void syncContentScripts());
 
 console.debug("[heystop] service worker ready");
