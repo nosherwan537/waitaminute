@@ -153,7 +153,10 @@ chrome.commands.onCommand.addListener(async (command) => {
 
 /** Captures completed today. This is the dogfooding instrument, not decoration. */
 async function bumpCount(): Promise<number> {
-  const today = new Date().toISOString().slice(0, 10);
+  // localDay, not toISOString: the counter must roll over at the user's
+  // midnight, the same one the day file uses. UTC would reset the count
+  // mid-evening for anyone west of Greenwich and disagree with the .md filename.
+  const today = localDay();
   const { captureCounts = {} } = (await chrome.storage.local.get("captureCounts")) as {
     captureCounts?: Record<string, number>;
   };
