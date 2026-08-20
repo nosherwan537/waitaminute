@@ -82,14 +82,38 @@ the `openai-compatible` adapter and you are done. Add the origin to
 `optional_host_permissions` in the manifest so it can be requested at runtime.
 
 Write a new adapter only for a genuinely different wire format. An adapter is
-two pure functions (`buildRequest`, `extractText`); the fetch, the retry policy,
-and the HTTP-status-to-named-error mapping live once in `providers/index.ts` and
-must stay there — duplicating them is how a 429 starts behaving differently
-depending on who returned it.
+three pure functions (`buildRequest`, `extractText`, `extractUsage`); the fetch,
+the retry policy, and the HTTP-status-to-named-error mapping live once in
+`providers/index.ts` and must stay there — duplicating them is how a 429 starts
+behaving differently depending on who returned it.
+
+`extractUsage` **must not throw and must not guess**. Return `undefined` when the
+provider said nothing about tokens, and use `usageFrom` so a half-reported usage
+block is rejected rather than priced as zero. A missing number reads as unknown;
+a wrong one silently misreports what the user spent. Watch for providers that
+report thinking tokens separately from response tokens (Gemini does, Anthropic
+does not) — both are billed as output.
 
 Model names in presets are **starting points, always editable in the UI**. They
 change faster than this extension ships, and a stale default must never become a
 dead end for the user.
+
+## The capture log
+
+`src/lib/capture-log.ts` records **every** hotkey press, successes and failures
+alike, and the failure rows are the valuable ones: `NothingToNote` is how you
+tell whether the prompt declines ad breaks or confabulates through them, and
+`ModelNotFound` is how you learn a preset's default model name went stale. Any
+new failure path must reach `logCapture` in the service worker — a path that
+throws without logging is invisible during dogfooding.
+
+Cost is computed from **user-supplied rates**, never a built-in price table.
+Prices drift as fast as model names, but a stale model name fails loudly while a
+stale price reports a confident wrong number. Tokens come off the wire and are
+always true; the dollar conversion is the user's own.
+
+Telemetry may never fail a capture: `appendLog` swallows its own errors on
+purpose.
 
 ## Adding a caption source (new platform)
 
