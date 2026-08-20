@@ -2,3 +2,7 @@ node_modules/
 dist/
 *.zip
 .DS_Store
+
+# Captured notes. LocalMdSink writes to Downloads/heystop/<day>.md, which is
+# this repo. Day files are personal transcripts and must never be committed.
+20*.md
