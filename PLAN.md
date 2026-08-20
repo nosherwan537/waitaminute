@@ -135,6 +135,7 @@ regret if canvas tainting fights back.
  AuthCancelled           | local .md only, keep going  | "Saved locally"
  DocMissing              | recreate, note the swap     | "Doc was gone — made a new one"
  DocsQuotaExceeded       | local .md only              | "Quota hit — saved locally"
+ DocsWriteFailed         | local .md only              | "Couldn't write to your doc"
  LocalWriteFailed        | Docs only, warn once        | "Couldn't write local copy"
  OrphanedCapture         | replay from storage on boot | "Recovered 1 pending note"
  TabCaptureUnavailable   | disable on this site        | "Audio blocked here (DRM)"
