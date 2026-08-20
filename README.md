@@ -102,15 +102,26 @@ Architecture, the MV3 context rules, and the security boundaries are in
 [AGENTS.md](AGENTS.md). The product reasoning and build order are in
 [PLAN.md](PLAN.md).
 
+## No captions? Audio fallback
+
+For videos with no caption track at all, click the toolbar icon once to arm
+audio capture on that tab. The tab keeps its sound — the captured stream is piped
+straight back to your speakers — and the last few minutes are held as raw PCM,
+transcribed only when you press a hotkey.
+
+Requires a provider that offers speech to text; OpenAI and Groq are wired up.
+Chrome allows one capture at a time, so arming a second tab moves it. Timestamps
+from this path are approximate.
+
 ## Status
 
-Steps 1–10 and 14 of [PLAN.md](PLAN.md) are built: captions, model routing,
-notes, local files, Google Docs, three hotkeys, toasts, the capture log, and the
-generic caption source.
+Steps 1–12 and 14 of [PLAN.md](PLAN.md) are built: captions, model routing,
+notes, local files, Google Docs, three hotkeys, toasts, the capture log, the
+generic caption source, and the audio fallback.
 
-Not done: the audio fallback for videos with no captions at all (step 11), frame
-capture (step 12, optional by design), and the two weeks of real study that
-decide whether any of this works (step 13).
+Not done: frame capture (step 12, optional and cuttable by design), and the two
+weeks of real study that decide whether any of this works (step 13). **Nothing
+here has been used against a real video yet.**
 
 ## License
 

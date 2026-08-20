@@ -159,6 +159,33 @@ burns subtitles onto the user's video. `"hidden"` loads them with no display,
 and the original mode must be restored afterwards — reading from a page must
 not leave it altered.
 
+## The audio path (step 11)
+
+Reached only when captions are unavailable AND the user armed the tab by
+clicking the toolbar icon. Four things here are load-bearing:
+
+1. **Capturing tab audio mutes the tab.** `recorder.ts` connects the source to
+   `context.destination` FIRST, before the worklet, so no error path can leave a
+   user's lecture silent. Never reorder that.
+2. **`chrome.tabCapture.capture()` is not available to offscreen documents.**
+   The worker calls `getMediaStreamId()`; the offscreen document calls
+   `getUserMedia`. `getMediaStreamId` is callback-only and reports failure via
+   `runtime.lastError`, so it must be promisified by hand.
+3. **`getMediaStreamId` needs a user gesture** — hence the toolbar click. This is
+   the registry's `CaptureGestureRequired`.
+4. **Exactly one offscreen document may exist per extension.** Audio capture is
+   therefore one tab at a time; arming a second tab moves it. Platform limit,
+   not a decision.
+
+A PCM ring is used rather than `MediaRecorder` because a timeslice recorder
+writes the WebM header into chunk 0 only — a rolling buffer of those chunks
+becomes undecodable the moment chunk 0 falls off the back. That failure appears
+only after the buffer wraps, which is to say only in real use.
+
+Timestamps from this path are approximate: the ring holds real time, which
+tracks the playhead only at 1x with no buffering. `startSec` is not trustworthy
+to the second and the deep link is a best effort.
+
 ## Commands
 
 ```bash
