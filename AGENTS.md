@@ -144,9 +144,20 @@ purpose.
 
 ## Adding a caption source (new platform)
 
-Implement the shape in PLAN.md's `TranscriptSource`. It must emit `TranscriptSlice`
-unchanged so nothing downstream learns which platform it came from. Add `host_permissions`
-and a `content_scripts` match pair (MAIN + ISOLATED) for the new origin.
+**Usually you do not need to.** `content/track-source.ts` reads the standard
+`TextTrack` API and covers any site whose player uses ordinary `<track>`
+captions. The user adds the site in options; it is registered at runtime by
+`background/site-registry.ts`. No code.
+
+Write a real source only for a platform that hides captions behind an internal
+API, as YouTube does. It must emit `TranscriptSlice` unchanged so nothing
+downstream learns which platform it came from. A MAIN-world interceptor also
+needs a static `content_scripts` match pair and `host_permissions`.
+
+In `track-source.ts`, never set `track.mode = "showing"` to load cues. That
+burns subtitles onto the user's video. `"hidden"` loads them with no display,
+and the original mode must be restored afterwards — reading from a page must
+not leave it altered.
 
 ## Commands
 
