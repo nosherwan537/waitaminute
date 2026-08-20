@@ -115,7 +115,7 @@ from this path are approximate.
 
 ## Status
 
-Steps 1–12 and 14 of [PLAN.md](PLAN.md) are built: captions, model routing,
+Steps 1–11 and 14 of [PLAN.md](PLAN.md) are built: captions, model routing,
 notes, local files, Google Docs, three hotkeys, toasts, the capture log, the
 generic caption source, and the audio fallback.
 
