@@ -1,4 +1,7 @@
 import type { CommandName } from "../types";
+import type { TokenUsage } from "./providers/types";
+
+export type { TokenUsage };
 
 /**
  * The capture log — the dogfooding instrument PLAN.md step 9 asks for.
@@ -18,12 +21,6 @@ import type { CommandName } from "../types";
  * Storage is separate from `notes`: notes are the product, this is telemetry
  * about the product, and clearing one must never clear the other.
  */
-
-/** Provider-reported token counts. Absent when the provider didn't say. */
-export interface TokenUsage {
-  input: number;
-  output: number;
-}
 
 /**
  * `"ok"`, or an `ErrorName` from the registry. Deliberately typed as a plain

@@ -1,4 +1,4 @@
-import { shapeError, type Adapter } from "./types";
+import { shapeError, usageFrom, type Adapter } from "./types";
 
 /**
  * The OpenAI `/chat/completions` shape — the de-facto standard.
@@ -22,6 +22,7 @@ import { shapeError, type Adapter } from "./types";
 interface OpenAIBody {
   choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>;
   error?: { message?: string };
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
 export const openAiCompatibleAdapter: Adapter = {
@@ -58,5 +59,12 @@ export const openAiCompatibleAdapter: Adapter = {
     const text = res.choices?.[0]?.message?.content;
     if (!text) throw shapeError("openai-compatible", "response contained no text");
     return text;
+  },
+
+  extractUsage(body) {
+    // Many compatible servers — local ones especially — omit `usage` entirely.
+    // That is why the field is optional the whole way down.
+    const usage = ((body ?? {}) as OpenAIBody).usage;
+    return usageFrom(usage?.prompt_tokens, usage?.completion_tokens);
   },
 };

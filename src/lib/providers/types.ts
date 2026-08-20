@@ -34,6 +34,20 @@ export interface ProviderConfig {
   baseUrl?: string;
 }
 
+/**
+ * Tokens a provider says it billed. Optional everywhere: some OpenAI-compatible
+ * servers (notably local ones) omit `usage` entirely, and a missing count must
+ * read as "unknown", never as zero.
+ *
+ * Cache-read and cache-write tokens are deliberately NOT broken out — nothing
+ * here uses prompt caching, since every capture is a one-shot call with a fresh
+ * transcript and nothing to reuse.
+ */
+export interface TokenUsage {
+  input: number;
+  output: number;
+}
+
 /** A single-turn completion. No conversation state — each capture stands alone. */
 export interface CompletionRequest {
   system: string;
@@ -56,6 +70,12 @@ export interface Adapter {
   buildRequest(target: ResolvedTarget, req: CompletionRequest): { url: string; init: RequestInit };
   /** Pure. Pull the assistant's text out of a parsed response body. */
   extractText(body: unknown): string;
+  /**
+   * Pure. Pull billed token counts out of the same body. MUST NOT throw and
+   * MUST return undefined rather than guess: this feeds the capture log, and
+   * telemetry may never be the reason a capture fails.
+   */
+  extractUsage(body: unknown): TokenUsage | undefined;
 }
 
 /** A service the user can pick. Adding one is a row in `presets.ts`. */
@@ -80,6 +100,17 @@ export interface Preset {
   readonly keyOptional?: boolean;
   /** One line under the fields telling the user where to find their model list. */
   readonly note?: string;
+}
+
+/**
+ * Shared by every adapter's `extractUsage`. Returns undefined unless BOTH counts
+ * are real numbers: a half-reported usage block would price a note wrong, and a
+ * wrong number is worse here than a missing one.
+ */
+export function usageFrom(input: unknown, output: unknown): TokenUsage | undefined {
+  if (typeof input !== "number" || typeof output !== "number") return undefined;
+  if (!Number.isFinite(input) || !Number.isFinite(output)) return undefined;
+  return { input, output };
 }
 
 /** Thrown by extractText when the body isn't the shape we expected. */

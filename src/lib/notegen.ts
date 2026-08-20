@@ -1,6 +1,6 @@
 import { NamedError } from "./errors";
 import { complete, resolveTarget } from "./providers";
-import type { ProviderConfig } from "./providers";
+import type { ProviderConfig, TokenUsage } from "./providers";
 import { formatTimestamp } from "./slice";
 import type { TranscriptSlice } from "../types";
 
@@ -179,20 +179,58 @@ export function formatNote(note: Note, slice: TranscriptSlice): string {
 }
 
 /**
+ * A note plus what it cost to make. `usage` and `model` ride along for the
+ * capture log — resolving the model here is what lets the log record the model
+ * that actually ran, rather than the possibly-empty one the user configured.
+ */
+export interface NoteResult {
+  note: Note;
+  usage?: TokenUsage;
+  model: string;
+}
+
+/**
  * The full pass. Throws a NamedError from the registry on every failure path, so
  * the caller can turn any of them into a toast without a default branch.
+ *
+ * NothingToNote throws even though tokens were spent. The caller still has to
+ * log that spend, which is why the error carries the usage — see `usageOf`.
  */
 export async function generateNote(
   config: ProviderConfig,
   slice: TranscriptSlice,
-): Promise<Note> {
+): Promise<NoteResult> {
   const target = resolveTarget(config);
   const { system, user } = buildPrompt(slice);
-  const raw = await complete(target, { system, user, maxTokens: MAX_TOKENS });
+  const { text, usage } = await complete(target, { system, user, maxTokens: MAX_TOKENS });
 
-  const note = parseNote(raw);
+  const note = parseNote(text);
   if (isNothingToNote(note)) {
-    throw new NamedError("NothingToNote", "Nothing worth noting there");
+    // The call was billed. Attaching usage to the error is what keeps an ad
+    // break from looking free in the capture log.
+    throw new NamedError(
+      "NothingToNote",
+      "Nothing worth noting there",
+      false,
+      { usage, model: target.model } satisfies SpentDetail,
+    );
   }
-  return note;
+  return { note, usage, model: target.model };
+}
+
+/** What a NamedError carries when the failure happened after money was spent. */
+export interface SpentDetail {
+  usage?: TokenUsage;
+  model: string;
+}
+
+/**
+ * Pure. Recover usage from a thrown error, when the thrower attached it. Returns
+ * an empty object for every other error, so the caller can log uniformly without
+ * a special case per failure path.
+ */
+export function spentOf(cause: unknown): SpentDetail | undefined {
+  if (typeof cause !== "object" || cause === null) return undefined;
+  const detail = cause as Partial<SpentDetail>;
+  return typeof detail.model === "string" ? { usage: detail.usage, model: detail.model } : undefined;
 }

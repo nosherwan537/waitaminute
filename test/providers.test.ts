@@ -169,6 +169,67 @@ describe("gemini adapter", () => {
   });
 });
 
+describe("extractUsage", () => {
+  it("reads Anthropic's input/output token counts", () => {
+    expect(
+      anthropicAdapter.extractUsage({ usage: { input_tokens: 1200, output_tokens: 300 } }),
+    ).toEqual({ input: 1200, output: 300 });
+  });
+
+  it("reads the OpenAI-compatible prompt/completion names", () => {
+    expect(
+      openAiCompatibleAdapter.extractUsage({
+        usage: { prompt_tokens: 1200, completion_tokens: 300 },
+      }),
+    ).toEqual({ input: 1200, output: 300 });
+  });
+
+  it("adds Gemini's thinking tokens into output, since both are billed as output", () => {
+    // The failure this guards: Gemini reports thoughts SEPARATELY from
+    // candidates. Reading candidatesTokenCount alone under-reports the bill on
+    // any thinking model — silently, and by a large factor.
+    expect(
+      geminiAdapter.extractUsage({
+        usageMetadata: {
+          promptTokenCount: 1200,
+          candidatesTokenCount: 300,
+          thoughtsTokenCount: 900,
+        },
+      }),
+    ).toEqual({ input: 1200, output: 1200 });
+  });
+
+  it("handles Gemini responses with no thinking tokens", () => {
+    expect(
+      geminiAdapter.extractUsage({
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+      }),
+    ).toEqual({ input: 10, output: 5 });
+  });
+
+  for (const [name, adapter] of [
+    ["anthropic", anthropicAdapter],
+    ["openai-compatible", openAiCompatibleAdapter],
+    ["gemini", geminiAdapter],
+  ] as const) {
+    describe(name, () => {
+      // The contract in types.ts: extractUsage MUST NOT throw. It runs on every
+      // successful capture, and telemetry may never be why a note is lost.
+      for (const [label, body] of [
+        ["a missing usage block", {}],
+        ["null", null],
+        ["a string body", "nonsense"],
+        ["a half-reported usage block", { usage: { input_tokens: 5 }, usageMetadata: { promptTokenCount: 5 } }],
+        ["non-numeric counts", { usage: { input_tokens: "5", output_tokens: "1" } }],
+      ] as const) {
+        it(`returns undefined for ${label} without throwing`, () => {
+          expect(adapter.extractUsage(body)).toBeUndefined();
+        });
+      }
+    });
+  }
+});
+
 describe("presets", () => {
   it("has unique ids", () => {
     const ids = PRESETS.map((p) => p.id);
@@ -269,7 +330,7 @@ describe("complete", () => {
 
   it("returns the extracted text on success", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok("hello")));
-    await expect(complete(t, REQ)).resolves.toBe("hello");
+    await expect(complete(t, REQ)).resolves.toMatchObject({ text: "hello" });
     vi.unstubAllGlobals();
   });
 
@@ -280,7 +341,7 @@ describe("complete", () => {
       .mockResolvedValueOnce(new Response("slow down", { status: 429 }))
       .mockResolvedValueOnce(ok("done"));
     vi.stubGlobal("fetch", fetchMock);
-    await expect(complete(t, REQ, async () => {})).resolves.toBe("done");
+    await expect(complete(t, REQ, async () => {})).resolves.toMatchObject({ text: "done" });
     expect(fetchMock).toHaveBeenCalledTimes(3);
     vi.unstubAllGlobals();
   });
@@ -314,6 +375,34 @@ describe("complete", () => {
   it("maps an unreadable body to MalformedNoteResponse", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
     await expect(complete(t, REQ)).rejects.toThrow(/MalformedNoteResponse/);
+    vi.unstubAllGlobals();
+  });
+
+  it("carries token usage through when the provider reported it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "hi" } }],
+            usage: { prompt_tokens: 900, completion_tokens: 120 },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    await expect(complete(t, REQ)).resolves.toEqual({
+      text: "hi",
+      usage: { input: 900, output: 120 },
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("still returns the note when the provider reports no usage at all", async () => {
+    // Local servers (Ollama, LM Studio) routinely omit `usage`. A missing token
+    // count must never cost the user their note.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok("hi")));
+    await expect(complete(t, REQ)).resolves.toEqual({ text: "hi", usage: undefined });
     vi.unstubAllGlobals();
   });
 

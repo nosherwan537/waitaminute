@@ -50,6 +50,12 @@ export interface TranscriptSlice {
   language?: string;
   /** Human-readable track name ("Spanish"), for the note heading. */
   languageName?: string;
+  /**
+   * Which TranscriptSource produced this. Absent means captions — every slice
+   * today comes from one. AudioSource (PLAN.md step 11) sets `"audio"`, and the
+   * capture log is what will show whether the fallback is carrying real weight.
+   */
+  source?: "captions" | "audio";
 }
 
 /** Messages the MAIN-world interceptor posts to the isolated content script. */

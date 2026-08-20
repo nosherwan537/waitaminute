@@ -1,4 +1,4 @@
-import { shapeError, type Adapter } from "./types";
+import { shapeError, usageFrom, type Adapter } from "./types";
 
 /**
  * Anthropic Messages API.
@@ -20,6 +20,7 @@ import { shapeError, type Adapter } from "./types";
 interface AnthropicBody {
   content?: Array<{ type?: string; text?: string }>;
   stop_reason?: string;
+  usage?: { input_tokens?: number; output_tokens?: number };
 }
 
 export const anthropicAdapter: Adapter = {
@@ -62,5 +63,12 @@ export const anthropicAdapter: Adapter = {
       .join("");
     if (!text) throw shapeError("anthropic", "response contained no text");
     return text;
+  },
+
+  extractUsage(body) {
+    // `output_tokens` already includes thinking tokens, which are billed as
+    // output — no separate field to add in.
+    const usage = ((body ?? {}) as AnthropicBody).usage;
+    return usageFrom(usage?.input_tokens, usage?.output_tokens);
   },
 };

@@ -9,7 +9,8 @@
  * into `generateNote`.
  */
 
-import { formatNote, generateNote } from "../lib/notegen";
+import { formatNote, generateNote, spentOf } from "../lib/notegen";
+import { appendLog, type LogEntry } from "../lib/capture-log";
 import { isNamedError, NamedError } from "../lib/errors";
 import { DEFAULT_PRESET_ID, type ProviderConfig } from "../lib/providers";
 import { appendNote, localDay } from "../lib/notes-store";
@@ -69,9 +70,27 @@ chrome.commands.onCommand.addListener(async (command) => {
 
   const { slice } = response;
 
+  // Started before the provider call so the log measures what the user feels:
+  // press to outcome, retries and disk write included.
+  const startedAt = Date.now();
+  const logCapture = (
+    outcome: string,
+    spent: { usage?: LogEntry["usage"]; model: string } | undefined,
+  ) =>
+    appendLog({
+      id: startedAt,
+      command,
+      source: slice.source ?? "captions",
+      latencyMs: Date.now() - startedAt,
+      outcome,
+      usage: spent?.usage,
+      model: spent?.model ?? "",
+      videoTitle: slice.videoTitle,
+    });
+
   try {
     const config = await loadConfig();
-    const note = await generateNote(config, slice);
+    const { note, usage, model } = await generateNote(config, slice);
 
     // Persist BEFORE writing the file. Storage is the source of truth, so from
     // this line on the note cannot be lost — only the file can be out of date,
@@ -96,6 +115,10 @@ chrome.commands.onCommand.addListener(async (command) => {
       console.error("[heystop] LocalWriteFailed", cause);
     }
 
+    // Logged before the toast: the toast can fail on a closed tab, and losing
+    // the confirmation must not also lose the record that the capture happened.
+    await logCapture(warning ? "LocalWriteFailed" : "ok", { usage, model });
+
     await toast(tabId, {
       state: warning ? "error" : "success",
       text: warning ?? "Noted",
@@ -110,6 +133,12 @@ chrome.commands.onCommand.addListener(async (command) => {
     // reverse: an error the user can't act on is noise, and one they never see
     // is a silent failure.
     console.error(`[heystop] ${named.name_}`, named.userMessage, named.cause ?? "");
+
+    // Every failure is logged, including NothingToNote. That row IS the answer
+    // to "does the prompt refuse during ads, or confabulate?" — the question
+    // PLAN.md says kills the product quietly if it goes the wrong way. A log of
+    // successes only would never show it.
+    await logCapture(named.name_, spentOf(named.cause));
 
     // NothingToNote is a correct outcome, not a failure: the user pressed during
     // an ad or dead air. Say so calmly and write nothing at all.

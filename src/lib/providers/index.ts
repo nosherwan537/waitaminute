@@ -3,7 +3,14 @@ import { anthropicAdapter } from "./anthropic";
 import { openAiCompatibleAdapter } from "./openai";
 import { geminiAdapter } from "./gemini";
 import { findPreset } from "./presets";
-import type { Adapter, AdapterId, CompletionRequest, ProviderConfig, ResolvedTarget } from "./types";
+import type {
+  Adapter,
+  AdapterId,
+  CompletionRequest,
+  ProviderConfig,
+  ResolvedTarget,
+  TokenUsage,
+} from "./types";
 
 export * from "./types";
 export { PRESETS, DEFAULT_PRESET_ID, findPreset } from "./presets";
@@ -63,14 +70,23 @@ export function originFor(config: ProviderConfig): string | null {
  * give up. Everything else fails immediately — retrying a bad key wastes the
  * user's time and tells them nothing new.
  *
+ * Returns the text alongside whatever token counts the provider volunteered.
+ * Usage is best-effort: it feeds the capture log, and a provider that stays
+ * silent about tokens must still produce a note.
+ *
  * SECURITY: this runs in the service worker. `target.apiKey` must never travel
  * anywhere else.
  */
+export interface Completion {
+  text: string;
+  usage?: TokenUsage;
+}
+
 export async function complete(
   target: ResolvedTarget,
   req: CompletionRequest,
   sleep = (ms: number) => new Promise((r) => setTimeout(r, ms)),
-): Promise<string> {
+): Promise<Completion> {
   const adapter = ADAPTERS[target.adapter];
   const { url, init } = adapter.buildRequest(target, req);
 
@@ -96,8 +112,11 @@ export async function complete(
       continue;
     }
 
+    let body: unknown;
+    let text: string;
     try {
-      return adapter.extractText(await response.json());
+      body = await response.json();
+      text = adapter.extractText(body);
     } catch (cause) {
       throw new NamedError(
         "MalformedNoteResponse",
@@ -106,6 +125,18 @@ export async function complete(
         cause,
       );
     }
+
+    // Outside the try on purpose. `extractUsage` is contractually non-throwing,
+    // but if one ever did, a missing token count must not turn a good note into
+    // a MalformedNoteResponse.
+    let usage: TokenUsage | undefined;
+    try {
+      usage = adapter.extractUsage(body);
+    } catch (cause) {
+      console.warn("[heystop] usage extraction failed", cause);
+    }
+
+    return { text, usage };
   }
 
   throw lastError ?? new NamedError("ProviderUnavailable", "Provider unreachable", false);

@@ -1,4 +1,4 @@
-import { shapeError, type Adapter } from "./types";
+import { shapeError, usageFrom, type Adapter } from "./types";
 
 /**
  * Google's native `generateContent` API.
@@ -24,6 +24,11 @@ interface GeminiBody {
   }>;
   promptFeedback?: { blockReason?: string };
   error?: { message?: string };
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    thoughtsTokenCount?: number;
+  };
 }
 
 export const geminiAdapter: Adapter = {
@@ -61,5 +66,19 @@ export const geminiAdapter: Adapter = {
       .join("");
     if (!text) throw shapeError("gemini", "response contained no text");
     return text;
+  },
+
+  extractUsage(body) {
+    const usage = ((body ?? {}) as GeminiBody).usageMetadata;
+    if (typeof usage?.candidatesTokenCount !== "number") return undefined;
+    // Gemini reports thinking tokens SEPARATELY from candidate tokens, unlike
+    // Anthropic. Both are billed as output, so leaving thoughts out would
+    // under-report cost on any thinking model — silently, and by a lot.
+    //
+    // Thoughts default to 0 because a non-thinking model genuinely omits the
+    // field. Candidates do NOT default: a missing count there means Gemini
+    // said nothing, and defaulting it would report a billed call as free.
+    const output = usage.candidatesTokenCount + (usage.thoughtsTokenCount ?? 0);
+    return usageFrom(usage.promptTokenCount, output);
   },
 };
