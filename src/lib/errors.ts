@@ -20,7 +20,12 @@ export type ErrorName =
   | "MalformedNoteResponse"
   | "NothingToNote"
   | "LocalWriteFailed"
-  | "PermissionDenied";
+  | "PermissionDenied"
+  | "NotAuthorized"
+  | "AuthCancelled"
+  | "DocMissing"
+  | "DocsQuotaExceeded"
+  | "DocsWriteFailed";
 
 export class NamedError extends Error {
   constructor(
