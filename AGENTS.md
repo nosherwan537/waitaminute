@@ -98,6 +98,33 @@ Model names in presets are **starting points, always editable in the UI**. They
 change faster than this extension ships, and a stale default must never become a
 dead end for the user.
 
+## Google Docs setup (one time, per machine)
+
+The OAuth client ID is personal and is NOT in git. Without it the extension
+builds and runs fine — Docs is simply off and notes stay in the local .md.
+
+1. Google Cloud console → new project → enable the **Google Docs API** and the
+   **Google Drive API**.
+2. OAuth consent screen → External → add yourself as a test user. Scopes:
+   `documents` and `drive.file`, nothing wider.
+3. Credentials → Create OAuth client ID → **Chrome Extension**. It asks for the
+   extension ID, so load `dist/` unpacked first and copy the ID it gets.
+4. Write `oauth.local.json` in the repo root (gitignored):
+
+   ```json
+   { "clientId": "….apps.googleusercontent.com", "key": "<optional>" }
+   ```
+
+   `key` is the `key` field from a packed manifest. Set it if the extension ID
+   changes across reloads — `getAuthToken` needs a stable ID, and a changed one
+   makes Google reject the client.
+5. `npm run build`. It prints `oauth -> client id injected`.
+
+`getAuthToken` is used rather than `launchWebAuthFlow` because the registry
+promises a transparent token refresh, and the implicit flow has no refresh token
+— it would mean a consent popup every hour, mid-video. Do not swap this without
+solving that.
+
 ## The capture log
 
 `src/lib/capture-log.ts` records **every** hotkey press, successes and failures

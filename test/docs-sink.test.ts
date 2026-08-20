@@ -75,7 +75,7 @@ describe("appendToDoc", () => {
 
     await expect(appendToDoc(NOTE, SLICE)).resolves.toMatchObject({ id: "doc-1" });
 
-    const [, update] = fetchMock.mock.calls;
+    const update = fetchMock.mock.calls[1]!;
     const body = JSON.parse(update[1].body);
     // 42 - 1: the body's trailing newline is not writable.
     expect(body.requests[0].insertText.location.index).toBe(41);
@@ -93,7 +93,7 @@ describe("appendToDoc", () => {
     await expect(appendToDoc(NOTE, SLICE)).resolves.toMatchObject({ id: "doc-1" });
     // Without the invalidate, Chrome hands back the same dead token forever.
     expect(removed).toEqual(["t1"]);
-    expect(fetchMock.mock.calls[1][1].headers.authorization).toBe("Bearer t2");
+    expect(fetchMock.mock.calls[1]![1].headers.authorization).toBe("Bearer t2");
   });
 
   it("gives up after one refresh, rather than looping on a revoked grant", async () => {
