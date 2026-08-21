@@ -154,6 +154,21 @@ describe("gemini adapter", () => {
     expect(body["contents"]).toEqual([{ role: "user", parts: [{ text: "usr" }] }]);
   });
 
+  it("disables thinking, which is on by default and billed as output", () => {
+    const body = bodyOf(geminiAdapter.buildRequest(target({ adapter: "gemini" }), REQ).init);
+    // Regression guard for the first real dogfooding bug: Flash spent ~8k
+    // tokens and 30-40s thinking about a cleanup pass before this was set.
+    expect(body["generationConfig"]).toMatchObject({ thinkingConfig: { thinkingBudget: 0 } });
+  });
+
+  it("treats a MAX_TOKENS finish as a failure, not a finished note", () => {
+    expect(() =>
+      geminiAdapter.extractText({
+        candidates: [{ content: { parts: [{ text: '{"takeaway":"half a th' }] }, finishReason: "MAX_TOKENS" }],
+      }),
+    ).toThrow(/output budget/);
+  });
+
   it("joins the parts of the first candidate", () => {
     expect(
       geminiAdapter.extractText({

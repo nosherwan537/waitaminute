@@ -48,7 +48,20 @@ export const geminiAdapter: Adapter = {
         body: JSON.stringify({
           system_instruction: { parts: [{ text: req.system }] },
           contents: [{ role: "user", parts: [{ text: req.user }] }],
-          generationConfig: { maxOutputTokens: req.maxTokens },
+          generationConfig: {
+            maxOutputTokens: req.maxTokens,
+            // Gemini 2.5 thinks by DEFAULT, and its thoughts are billed as
+            // output and drawn from the same `maxOutputTokens` budget. Left
+            // unset, Flash spent ~7-8k tokens and 30-40s deliberating over a
+            // transcript cleanup — a task the premise defines as reconstruction,
+            // not judgement. Worse, thoughts can eat the entire budget and
+            // return zero text, which surfaces as "response contained no text".
+            //
+            // 0 disables thinking on Flash. Note that 2.5 PRO cannot disable it
+            // (its floor is 128) and rejects 0 with a 400 — hence the preset
+            // note steering to Flash for this task.
+            thinkingConfig: { thinkingBudget: 0 },
+          },
         }),
       },
     };
@@ -61,9 +74,15 @@ export const geminiAdapter: Adapter = {
     if (res.promptFeedback?.blockReason) {
       throw shapeError("gemini", `blocked: ${res.promptFeedback.blockReason}`);
     }
-    const text = (res.candidates?.[0]?.content?.parts ?? [])
-      .map((p) => p.text ?? "")
-      .join("");
+    const candidate = res.candidates?.[0];
+    const text = (candidate?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+
+    // Truncation is a 200 with a partial body. Parsing it as if complete is how
+    // a half-written note reaches the doc looking finished — the failure mode
+    // that is worse than an error, because nothing tells you it happened.
+    if (candidate?.finishReason === "MAX_TOKENS") {
+      throw shapeError("gemini", "the model ran out of output budget mid-note");
+    }
     if (!text) throw shapeError("gemini", "response contained no text");
     return text;
   },

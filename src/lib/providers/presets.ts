@@ -52,7 +52,7 @@ export const PRESETS: readonly Preset[] = [
     defaultModel: "gemini-2.5-flash",
     keyHint: "AIza...",
     origin: "https://generativelanguage.googleapis.com/*",
-    note: "Free tier at aistudio.google.com. Check there for current model names.",
+    note: "Free tier at aistudio.google.com. Prefer a Flash model: 2.5 Pro cannot turn thinking off, which makes every capture slow and expensive for a cleanup pass.",
   },
   {
     id: "groq",
