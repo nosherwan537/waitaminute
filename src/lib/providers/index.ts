@@ -79,6 +79,13 @@ export function originFor(config: ProviderConfig): string | null {
  * SECURITY: this runs in the service worker. `target.apiKey` must never travel
  * anywhere else.
  */
+/**
+ * No provider call may hang forever. Without this the toast sits on
+ * "Noting that..." with no error and no timeout — the exact silent failure
+ * premise 8 forbids, and indistinguishable from a crash to the user.
+ */
+export const TIMEOUT_MS = 45_000;
+
 export interface Completion {
   text: string;
   usage?: TokenUsage;
@@ -98,13 +105,33 @@ export async function complete(
   for (let attempt = 0; attempt <= BACKOFF_MS.length; attempt += 1) {
     if (attempt > 0) await sleep(BACKOFF_MS[attempt - 1]!);
 
+    // A fresh signal per attempt: an aborted one stays aborted, so a reused
+    // signal would fail every retry instantly.
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
+
     let response: Response;
     try {
-      response = await fetch(url, init);
+      response = await fetch(url, { ...init, signal: abort.signal });
     } catch (cause) {
+      // A timeout is NOT retried. Retrying would put the user in front of a
+      // motionless toast for minutes; premise 7 says they are still watching,
+      // so an honest failure they can act on beats a long silent wait.
+      if (abort.signal.aborted) {
+        throw new NamedError(
+          "ProviderTimeout",
+          `${target.model} didn't respond — try again`,
+          false,
+          cause,
+        );
+      }
       // fetch rejects only on network failure. Nothing to retry against here:
       // the queue-and-replay path in the registry owns this case.
       throw new NamedError("NetworkUnavailable", "Offline — note not saved", false, cause);
+    } finally {
+      // Always cleared: a live timer holds the service worker awake, and an
+      // abort firing after the response lands would reject the next read.
+      clearTimeout(timer);
     }
 
     if (!response.ok) {

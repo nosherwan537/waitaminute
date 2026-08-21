@@ -17,6 +17,7 @@ export type ErrorName =
   | "RateLimited"
   | "ProviderUnavailable"
   | "NetworkUnavailable"
+  | "ProviderTimeout"
   | "MalformedNoteResponse"
   | "NothingToNote"
   | "LocalWriteFailed"

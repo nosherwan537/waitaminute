@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { anthropicAdapter } from "../src/lib/providers/anthropic";
 import { openAiCompatibleAdapter } from "../src/lib/providers/openai";
 import { geminiAdapter } from "../src/lib/providers/gemini";
-import { PRESETS, resolveTarget, originFor, complete } from "../src/lib/providers";
+import { PRESETS, resolveTarget, originFor, complete, TIMEOUT_MS } from "../src/lib/providers";
 import type { ProviderConfig, ResolvedTarget } from "../src/lib/providers";
 import { NamedError } from "../src/lib/errors";
 
@@ -385,6 +385,45 @@ describe("complete", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     await expect(complete(t, REQ)).rejects.toThrow(/NetworkUnavailable/);
     vi.unstubAllGlobals();
+  });
+
+  it("aborts a provider that never answers, instead of hanging the toast", async () => {
+    // The bug this guards: no timeout anywhere meant a silent provider left
+    // "Noting that..." on screen forever, with no error and no recovery.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init?: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }),
+      ),
+    );
+    vi.useFakeTimers();
+    const promise = complete(t, REQ, async () => {});
+    const assertion = expect(promise).rejects.toThrow(/ProviderTimeout/);
+    await vi.advanceTimersByTimeAsync(TIMEOUT_MS + 1);
+    await assertion;
+    vi.useRealTimers();
+  });
+
+  it("does not retry a timeout — three 45s waits is worse than one honest error", async () => {
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError")),
+        );
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.useFakeTimers();
+    const promise = complete(t, REQ, async () => {});
+    const assertion = expect(promise).rejects.toThrow(/ProviderTimeout/);
+    await vi.advanceTimersByTimeAsync(TIMEOUT_MS + 1);
+    await assertion;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it("maps an unreadable body to MalformedNoteResponse", async () => {

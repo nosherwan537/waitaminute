@@ -128,6 +128,7 @@ regret if canvas tainting fights back.
  RateLimited             | backoff 2s/4s, 2 retries    | "Rate limited, retrying..."
  ProviderUnavailable     | backoff, 2 retries          | "Provider down, retrying..."
  NetworkUnavailable      | queue to storage, replay    | "Offline — note queued"
+ ProviderTimeout         | abort at 45s, NO retry      | "<model> didn't respond — try again"
  MalformedNoteResponse   | 1 retry, then raw fallback  | "Saved transcript only"
  NothingToNote           | write NOTHING at all        | "Nothing worth noting there"
  NotAuthorized           | open options                | "Connect Google to save notes"

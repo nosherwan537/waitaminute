@@ -70,20 +70,34 @@ interface TranscriptionBody {
   error?: { message?: string };
 }
 
+/** See TIMEOUT_MS in ./index — same reasoning, bigger budget for the upload. */
+export const TRANSCRIBE_TIMEOUT_MS = 90_000;
+
 export async function transcribe(
   target: TranscriptionTarget,
   wav: Blob,
   language?: string,
 ): Promise<string> {
+  // Longer than the completion budget: this one uploads a WAV before any work
+  // starts, and a slow connection must not read as a dead provider.
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), TRANSCRIBE_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetch(`${target.baseUrl}/audio/transcriptions`, {
       method: "POST",
       headers: { authorization: `Bearer ${target.apiKey || "none"}` },
       body: buildTranscriptionForm(wav, target.model, language),
+      signal: abort.signal,
     });
   } catch (cause) {
+    if (abort.signal.aborted) {
+      throw new NamedError("ProviderTimeout", "Transcription timed out — try again", false, cause);
+    }
     throw new NamedError("NetworkUnavailable", "Offline — note not saved", false, cause);
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!response.ok) {
