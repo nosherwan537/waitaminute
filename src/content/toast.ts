@@ -21,6 +21,7 @@ const HOST_ID = "heystop-toast-host";
 const AUTO_DISMISS_MS = 2000;
 
 let dismissTimer: number | undefined;
+let elapsedTimer: number | undefined;
 
 const COLORS: Record<ToastState, { bg: string; fg: string }> = {
   processing: { bg: "rgba(28,28,30,.94)", fg: "#e8e8ed" },
@@ -47,6 +48,10 @@ export function showToast(state: ToastState, text: string, count?: number): void
   if (dismissTimer !== undefined) {
     clearTimeout(dismissTimer);
     dismissTimer = undefined;
+  }
+  if (elapsedTimer !== undefined) {
+    clearInterval(elapsedTimer);
+    elapsedTimer = undefined;
   }
 
   const { bg, fg } = COLORS[state];
@@ -76,9 +81,27 @@ export function showToast(state: ToastState, text: string, count?: number): void
     </style>
     <div class="t" role="status" aria-live="polite">
       ${escapeHtml(label)}
+      ${state === "processing" ? '<div class="d"><span class="e">0</span>s</div>' : ""}
       ${sticky ? '<div class="d">click to dismiss</div>' : ""}
     </div>
   `;
+
+  // A motionless "Noting that..." is indistinguishable from a crash. Latency is
+  // not a tight constraint here (premise 7: they pressed and kept watching), but
+  // AMBIGUITY is — a working 35s capture was reported as a hang for want of this.
+  if (state === "processing") {
+    const started = Date.now();
+    elapsedTimer = window.setInterval(() => {
+      const el = root.querySelector(".e");
+      // The toast was replaced by a later state; stop counting against a dead node.
+      if (!el) {
+        clearInterval(elapsedTimer);
+        elapsedTimer = undefined;
+        return;
+      }
+      el.textContent = String(Math.round((Date.now() - started) / 1000));
+    }, 1000);
+  }
 
   if (sticky) {
     root.querySelector(".t")?.addEventListener("click", () => {
