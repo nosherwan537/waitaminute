@@ -109,8 +109,16 @@ is your dogfooding instrument.
 the offscreen doc. **Wire the AudioContext re-pipe FIRST** so the tab keeps its sound,
 then build the PCM ring buffer. All of premise 6's pain lives here, on purpose, isolated.
 
-**12. Frame capture (optional)** — canvas snapshot as supporting context. Cut it without
+**12. Frame capture (optional)** — ~~canvas snapshot~~ as supporting context. Cut it without
 regret if canvas tainting fights back.
+
+**BUILT 2026-08-22, and canvas tainting did fight back exactly as predicted.** A
+cross-origin video stream taints any canvas it is drawn onto, so `toDataURL` throws on
+every real player. Rather than cut, the capture moved to `chrome.tabs.captureVisibleTab`
+— which sidesteps tainting but photographs the whole viewport, so `lib/frame.ts` crops
+back to the player and refuses to send anything it cannot confine. Off by default, no
+new manifest permission, and it can never cost a note: the capture cannot throw, and a
+provider that rejects the image gets asked again without it.
 
 **13. Dogfood two weeks** — did you stop scrubbing back? What broke? What felt slow?
 
@@ -121,6 +129,7 @@ regret if canvas tainting fights back.
 ```
  NAMED ERROR             | ACTION                      | USER SEES
  ------------------------|-----------------------------|---------------------------
+ PageNeedsReload         | badge the toolbar icon      | (badge: reload this page)
  CaptionsUnavailable     | fall through to AudioSource | "No captions on this video"
  InterceptorTooLate      | re-request track            | (silent retry)
  EmptySlice              | abort BEFORE spending money | "Nothing said in that window"
@@ -196,9 +205,14 @@ you stop reading. This is the failure mode that kills the product quietly.
 |--------|---------|-----|------|--------|----------|
 | Office Hours | `/office-hours` | Problem framing | 1 | CLEAR | Premise rewritten; 1 eureka logged |
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | CLEAR | SELECTIVE EXPANSION, 7 proposals, 6 accepted, 1 deferred |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | — | — |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | STILL UNRUN | — |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | not needed (2 UI surfaces) |
 | Outside Voice | `/codex` | Independent 2nd opinion | 0 | — | codex not installed |
+
+**BUILD STATUS 2026-08-22:** steps 1–12 and 14 built. Steps 1–9 verified in a real
+browser end to end, including Google Docs. Steps 10 (generic TextTrack) and 11 (audio)
+are written and unit-tested but have never run against a real video. Step 13 (two weeks
+of dogfooding) has not started — it is the only remaining requirement for v1 done.
 
 **UNRESOLVED:** 0
 **CRITICAL GAPS:** 0 (the one found — `NothingToNote` undefined — was closed in the error registry)

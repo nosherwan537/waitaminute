@@ -79,6 +79,34 @@ Setup steps are in [AGENTS.md](AGENTS.md#google-docs-setup-one-time-per-machine)
 Scopes are `documents` and `drive.file` — access to files this extension created,
 never the rest of your Drive.
 
+## Video frame (optional, off)
+
+Some things a lecturer says only make sense with the screen. *"As you can see
+here, this term dominates"* — the captions give you a note pointing at nothing,
+and the slide has the equation.
+
+Switch on **Send the video frame with each note** in options and each capture
+also sends a picture of the player, taken at the moment you pressed the key,
+alongside the transcript. The model may use it only to work out what "this" and
+"here" referred to, and to fix terms the captions garbled. It is told not to
+describe the picture, not to add anything that was never spoken, and that the
+captions win any disagreement — a slide can be stale or run ahead of the words.
+
+It is **off by default**, because it is a screenshot going to a third party:
+
+- The screenshot is cropped to the video player before anything leaves your
+  machine, and if it cannot be cropped — the player is scrolled away, too small,
+  or the geometry does not add up — nothing is sent at all.
+- It goes to the same provider your transcripts already go to, and nowhere else.
+- Nothing is stored. The picture is not written to your Doc, your local
+  Markdown, or the capture log.
+- No extra permission is needed. The extension uses the site access you already
+  granted for that page.
+
+Needs a model that accepts images. With one that does not, the note is still
+written from the captions and the `Frame` column in the log stays empty — that
+column is how you tell.
+
 ## The capture log
 
 Options has a log of your last 50 presses, successes and failures alike, with
@@ -115,13 +143,16 @@ from this path are approximate.
 
 ## Status
 
-Steps 1–11 and 14 of [PLAN.md](PLAN.md) are built: captions, model routing,
+Steps 1–12 and 14 of [PLAN.md](PLAN.md) are built: captions, model routing,
 notes, local files, Google Docs, three hotkeys, toasts, the capture log, the
-generic caption source, and the audio fallback.
+generic caption source, the audio fallback, and the optional video frame.
 
-Not done: frame capture (step 12, optional and cuttable by design), and the two
-weeks of real study that decide whether any of this works (step 13). **Nothing
-here has been used against a real video yet.**
+Verified against real videos: the whole caption path, from hotkey to a note in
+a Google Doc with a working deep link. Written but never yet run in a browser:
+the generic caption source on a non-YouTube site, and the audio fallback.
+
+Not done: the two weeks of real study that decide whether any of this works
+(step 13).
 
 ## License
 

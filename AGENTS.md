@@ -60,6 +60,12 @@ cue list lives in the content script for exactly that reason.
 7. **`dist/` is generated.** Edit `src/`, run `npm run build`.
 8. **`slice()` stays pure.** No I/O, no `chrome.*`, no DOM. It carries the test coverage
    for all three hotkeys at once; that only works while it stays testable in isolation.
+9. **A frame is never sent uncropped.** `captureVisibleTab` photographs the whole
+   viewport. If `cropFor` cannot confine the image to the video rectangle it returns
+   null and NOTHING is sent. See the frame section below.
+10. **Reload the tab after every extension reload.** Not a code rule, a working rule:
+    reloading an unpacked extension orphans the content scripts in open tabs. You now
+    get a badge instead of silence, but the fix is still ⌘R on the page.
 
 ## Adding a hotkey
 
@@ -96,7 +102,26 @@ does not) — both are billed as output.
 
 Model names in presets are **starting points, always editable in the UI**. They
 change faster than this extension ships, and a stale default must never become a
-dead end for the user.
+dead end for the user. Two Gemini names went stale in two days during dogfooding;
+this is not a hypothetical.
+
+**Check the provider's thinking default before anything else, and check how you
+turn it DOWN, not just off.** Reasoning models think by default, thoughts are
+billed as output, and they usually draw from the same output budget as the note
+— a cleanup pass does not need any of it. Worse, the way you say so is not
+stable across a provider's own generations:
+
+| model | how to hold thinking down |
+|---|---|
+| Gemini 2.x | `thinkingBudget: 0` — off entirely |
+| Gemini 2.5 Pro | cannot switch off; floor 128, and `0` is a 400 |
+| Gemini 3.x | cannot switch off; `thinkingLevel: "low"`, and `0` is a 400 |
+| Anthropic | `output_config: { effort: "low" }` |
+
+`thinkingConfigFor()` in `gemini.ts` picks by generation number and sends **no
+thinking field at all** for a name it does not recognise. That branch is
+deliberate: an unknown name is more likely to be a new model than a typo, and a
+slower, pricier note beats a hard 400 the user meets mid-lecture.
 
 ## Google Docs setup (one time, per machine)
 
@@ -158,6 +183,45 @@ In `track-source.ts`, never set `track.mode = "showing"` to load cues. That
 burns subtitles onto the user's video. `"hidden"` loads them with no display,
 and the original mode must be restored afterwards — reading from a page must
 not leave it altered.
+
+## The video frame (step 12)
+
+Optional, **off by default**, and it must stay that way. It sends a picture of
+the user's screen region to a model provider; that is a decision they make on
+the options page, not one this extension makes for them.
+
+**Why `captureVisibleTab` and not `canvas.drawImage(video)`.** PLAN.md said to
+cut this feature "without regret if canvas tainting fights back". It fights
+back: video is served cross-origin on every real player, drawing it onto a
+canvas taints the canvas, and `toDataURL` then throws `SecurityError`. Capturing
+the tab avoids tainting completely — at the price of photographing the entire
+viewport, which is where all the care in `lib/frame.ts` comes from.
+
+Three rules, all load-bearing:
+
+1. **The crop is a privacy boundary, not a quality tweak.** Everything outside
+   the video rectangle is the rest of the user's page. `cropFor` clamps to the
+   captured bitmap and returns null — send nothing — whenever the player is too
+   small, scrolled away, or the geometry does not add up. The uncropped bitmap
+   must never leave `frame-capture.ts`.
+2. **Scale is measured, never assumed.** The factor comes from the captured
+   bitmap divided by the reported viewport, not from `devicePixelRatio`. They
+   agree on an ordinary display and disagree on a zoomed page or a window
+   dragged between monitors — and disagreeing means cropping the WRONG
+   rectangle, which is the failure that leaks the rest of the screen.
+3. **A frame may never cost a note.** `captureFrame` cannot throw; every failure
+   returns undefined. `complete()` drops the image and retries once when a
+   provider refuses it, because vision support is a property of the model, the
+   model name is free text, and any built-in list of which names take images
+   would be wrong within weeks.
+
+The prompt matters as much as the plumbing. `FRAME_GUIDANCE` in `notegen.ts`
+scopes the picture to **reconstruction**: resolving what "this" and "here"
+pointed at, and fixing jargon the captions garbled. It forbids describing the
+image, adding anything never spoken, and letting a busy slide talk the model out
+of a `NothingToNote`. Captions win any disagreement — they are what the speaker
+said, a slide may be stale. Weakening any of that turns the model into the judge
+the premise says it must not be.
 
 ## The audio path (step 11)
 
