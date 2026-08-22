@@ -89,13 +89,6 @@ export const TIMEOUT_MS = 45_000;
 export interface Completion {
   text: string;
   usage?: TokenUsage;
-  /**
-   * True when a frame was attached, rejected, and the call succeeded without it.
-   * Surfaced so the capture log can show that the note is caption-only — a
-   * frame silently going missing every time is a thing the user should be able
-   * to discover without reading the console.
-   */
-  imageDropped?: boolean;
 }
 
 export async function complete(
@@ -108,15 +101,11 @@ export async function complete(
   const BACKOFF_MS = [2000, 4000];
   let lastError: NamedError | undefined;
 
-  // Built inside the loop, not once outside it: the frame can be dropped
-  // mid-flight, and the request has to be rebuilt without it.
-  let request = req;
-  let imageDropped = false;
   let attempt = 0;
 
   while (attempt <= BACKOFF_MS.length) {
     if (attempt > 0) await sleep(BACKOFF_MS[attempt - 1]!);
-    const { url, init } = adapter.buildRequest(target, request);
+    const { url, init } = adapter.buildRequest(target, req);
 
     // A fresh signal per attempt: an aborted one stays aborted, so a reused
     // signal would fail every retry instantly.
@@ -149,23 +138,10 @@ export async function complete(
 
     if (!response.ok) {
       const error = errorForStatus(response.status, await response.text().catch(() => ""));
-
-      if (!error.retryable) {
-        // A frame is the likeliest reason a request the user's settings would
-        // otherwise satisfy gets refused: vision support is a property of the
-        // MODEL, the model name is free text, and no list of which names take
-        // images would stay true for long. So drop the picture and ask again
-        // rather than lose the note over an optional extra. Once only, and no
-        // backoff — this is a different request, not a retry of the same one.
-        if (request.image && !imageDropped) {
-          console.warn("[heystop] provider rejected the frame; retrying text-only", error.name_);
-          imageDropped = true;
-          request = { ...request, image: undefined };
-          continue;
-        }
-        throw error;
-      }
-
+      // Dropping a rejected frame is NOT handled here. It is a `generateNote`
+      // decision, because the prompt has to change with it — see the comment
+      // on `retryWithoutFrame`.
+      if (!error.retryable) throw error;
       lastError = error;
       attempt += 1;
       continue;
@@ -195,9 +171,7 @@ export async function complete(
       console.warn("[heystop] usage extraction failed", cause);
     }
 
-    // Present only when true: callers that never send a frame should get the
-    // same object shape they always did.
-    return { text, usage, ...(imageDropped ? { imageDropped: true } : {}) };
+    return { text, usage };
   }
 
   throw lastError ?? new NamedError("ProviderUnavailable", "Provider unreachable", false);

@@ -1,5 +1,14 @@
-import { describe, it, expect } from "vitest";
-import { buildPrompt, parseNote, isNothingToNote, isEnglish, formatNote, MAX_TOKENS } from "../src/lib/notegen";
+import { describe, it, expect, vi } from "vitest";
+import {
+  buildPrompt,
+  generateNote,
+  isFrameRejection,
+  parseNote,
+  isNothingToNote,
+  isEnglish,
+  formatNote,
+  MAX_TOKENS,
+} from "../src/lib/notegen";
 import { NamedError } from "../src/lib/errors";
 import type { TranscriptSlice } from "../src/types";
 
@@ -252,5 +261,117 @@ describe("buildPrompt with a frame (PLAN.md step 12)", () => {
     const foreign = buildPrompt(slice({ language: "es", languageName: "Spanish" }), true);
     expect(foreign.system).toContain("translation");
     expect(foreign.system).toContain("FRAME");
+  });
+});
+
+describe("dropping a frame the provider refused", () => {
+  const config = {
+    presetId: "gemini",
+    apiKey: "k",
+    model: "gemini-3.6-flash",
+  };
+  const frame = { mimeType: "image/jpeg", dataBase64: "QUJD", width: 8, height: 8 };
+  const note = JSON.stringify({ takeaway: "t", cleaned: "c", translation: null });
+  const ok = () =>
+    new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: note }] } }] }), {
+      status: 200,
+    });
+
+  function bodyOf(call: unknown[]): Record<string, unknown> {
+    return JSON.parse((call[1] as RequestInit).body as string) as Record<string, unknown>;
+  }
+
+  it("retries without the image and reports the note as caption-only", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("invalid argument", { status: 400 }))
+      .mockResolvedValueOnce(ok());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await generateNote(config, slice(), frame);
+    expect(result.frameUsed).toBe(false);
+    expect(result.note.cleaned).toBe("c");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
+  it("takes the frame OUT OF THE PROMPT on the retry, not just off the wire", async () => {
+    // The bug this guards: a system prompt still saying "an image is attached"
+    // when none is, which is an invitation to describe a picture that is not
+    // there. The prompt and the image have to move together.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("invalid argument", { status: 400 }))
+      .mockResolvedValueOnce(ok());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await generateNote(config, slice(), frame);
+
+    const first = JSON.stringify(bodyOf(fetchMock.mock.calls[0]!));
+    const second = JSON.stringify(bodyOf(fetchMock.mock.calls[1]!));
+    expect(first).toContain("QUJD");
+    expect(first).toContain("FRAME");
+    expect(second).not.toContain("QUJD");
+    expect(second).not.toContain("FRAME");
+    vi.unstubAllGlobals();
+  });
+
+  it("reports frameUsed true when the provider accepted the picture", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok()));
+    await expect(generateNote(config, slice(), frame)).resolves.toMatchObject({ frameUsed: true });
+    vi.unstubAllGlobals();
+  });
+
+  it("reports frameUsed false when no frame was offered at all", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok()));
+    await expect(generateNote(config, slice())).resolves.toMatchObject({ frameUsed: false });
+    vi.unstubAllGlobals();
+  });
+
+  it("drops the frame once only, then surfaces the failure", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("nope", { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(generateNote(config, slice(), frame)).rejects.toThrow(/MalformedNoteResponse/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
+  it("does not spend a second call on an error the frame cannot explain", async () => {
+    // A bad key is a bad key with or without a picture. Retrying would cost the
+    // user money to tell them what the first response already said.
+    const fetchMock = vi.fn().mockResolvedValue(new Response("bad key", { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(generateNote(config, slice(), frame)).rejects.toThrow(/ApiKeyInvalid/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("does not retry a NothingToNote, which is a correct answer", async () => {
+    // It is thrown AFTER a successful billed call. Retrying would charge twice
+    // for the same correct refusal.
+    const empty = JSON.stringify({ takeaway: null, cleaned: "", translation: null });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: empty }] } }] }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(generateNote(config, slice(), frame)).rejects.toThrow(/NothingToNote/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("isFrameRejection", () => {
+  it("accepts the error a refused or unreadable image produces", () => {
+    expect(isFrameRejection(new NamedError("MalformedNoteResponse", "x"))).toBe(true);
+  });
+
+  it("rejects errors a text-only retry cannot fix", () => {
+    for (const name of ["ApiKeyInvalid", "ModelNotFound", "NothingToNote", "ProviderTimeout"] as const) {
+      expect(isFrameRejection(new NamedError(name, "x"))).toBe(false);
+    }
+    expect(isFrameRejection(new Error("plain"))).toBe(false);
+    expect(isFrameRejection(undefined)).toBe(false);
   });
 });

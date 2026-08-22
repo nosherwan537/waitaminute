@@ -1,6 +1,6 @@
 import { NamedError } from "./errors";
 import { complete, resolveTarget } from "./providers";
-import type { ProviderConfig, TokenUsage } from "./providers";
+import type { Completion, ProviderConfig, ResolvedTarget, TokenUsage } from "./providers";
 import type { FrameImage } from "./frame";
 import { formatTimestamp } from "./slice";
 import type { TranscriptSlice } from "../types";
@@ -246,21 +246,65 @@ export interface NoteResult {
  * NothingToNote throws even though tokens were spent. The caller still has to
  * log that spend, which is why the error carries the usage — see `usageOf`.
  */
+/**
+ * One provider call for a slice, with or without the frame.
+ *
+ * The prompt is rebuilt each time on purpose: `FRAME_GUIDANCE` tells the model
+ * a picture IS attached, so it may only be present when one actually is. That
+ * coupling is why the frame retry lives here and not in `complete` — the
+ * transport layer cannot rewrite a prompt, and a system prompt describing an
+ * image that was dropped is an invitation to hallucinate one.
+ */
+async function callProvider(
+  target: ResolvedTarget,
+  slice: TranscriptSlice,
+  frame: FrameImage | undefined,
+): Promise<Completion> {
+  const { system, user } = buildPrompt(slice, frame !== undefined);
+  return complete(target, {
+    system,
+    user,
+    maxTokens: MAX_TOKENS,
+    ...(frame ? { image: { mimeType: frame.mimeType, dataBase64: frame.dataBase64 } } : {}),
+  });
+}
+
+/**
+ * Pure. Is this failure worth one more try without the picture?
+ *
+ * Only `MalformedNoteResponse`, which is where `errorForStatus` puts a 400 and
+ * where an unreadable reply lands. That is what a model refusing or choking on
+ * an image looks like. A bad key or a wrong model name is NOT fixed by dropping
+ * the frame, and retrying those would spend the user's money to tell them
+ * something they already knew.
+ */
+export function isFrameRejection(error: unknown): boolean {
+  return error instanceof NamedError && error.name_ === "MalformedNoteResponse";
+}
+
 export async function generateNote(
   config: ProviderConfig,
   slice: TranscriptSlice,
   frame?: FrameImage,
 ): Promise<NoteResult> {
   const target = resolveTarget(config);
-  const { system, user } = buildPrompt(slice, frame !== undefined);
-  const { text, usage, imageDropped } = await complete(target, {
-    system,
-    user,
-    maxTokens: MAX_TOKENS,
-    ...(frame ? { image: { mimeType: frame.mimeType, dataBase64: frame.dataBase64 } } : {}),
-  });
 
-  const note = parseNote(text);
+  let frameUsed = frame !== undefined;
+  let result: Completion;
+  try {
+    result = await callProvider(target, slice, frame);
+  } catch (error) {
+    // Vision support is a property of the MODEL, the model name is free text,
+    // and any built-in list of which names take images would be wrong within
+    // weeks. So ask once more without it rather than lose the note over an
+    // optional extra. Once only — a second failure is the user's real error.
+    if (!frameUsed || !isFrameRejection(error)) throw error;
+    console.warn("[heystop] provider rejected the frame; retrying text-only", error);
+    frameUsed = false;
+    result = await callProvider(target, slice, undefined);
+  }
+
+  const note = parseNote(result.text);
   if (isNothingToNote(note)) {
     // The call was billed. Attaching usage to the error is what keeps an ad
     // break from looking free in the capture log.
@@ -268,10 +312,10 @@ export async function generateNote(
       "NothingToNote",
       "Nothing worth noting there",
       false,
-      { usage, model: target.model } satisfies SpentDetail,
+      { usage: result.usage, model: target.model } satisfies SpentDetail,
     );
   }
-  return { note, usage, model: target.model, frameUsed: frame !== undefined && !imageDropped };
+  return { note, usage: result.usage, model: target.model, frameUsed };
 }
 
 /** What a NamedError carries when the failure happened after money was spent. */

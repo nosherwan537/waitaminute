@@ -188,6 +188,9 @@ chrome.commands.onCommand.addListener(async (command) => {
         ? await captureFrame(tabId, tab.windowId, viewport)
         : undefined;
 
+    // `frameUsed` is false when no frame was offered AND when one was offered
+    // and refused — the log column reads "did a picture actually reach the
+    // model", which is the only version of that fact worth showing.
     const { note, usage, model, frameUsed } = await generateNote(config, slice, frame);
 
     // Persist BEFORE writing the file. Storage is the source of truth, so from
