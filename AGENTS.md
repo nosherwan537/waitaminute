@@ -192,6 +192,13 @@ Optional, **off by default**, and it must stay that way. It sends a picture of
 the user's screen region to a model provider; that is a decision they make on
 the options page, not one this extension makes for them.
 
+**`activeTab` is required, and host permission is not enough.**
+`captureVisibleTab` accepts only `<all_urls>` or `activeTab`. This was assumed
+wrong once already and cost a full build-test cycle to find, because nothing but
+a real browser run surfaces it. Never widen this to `<all_urls>`: `activeTab`
+covers one tab at the moment of invocation (the hotkey counts), lapses on
+navigation, and adds no line to the install prompt.
+
 **Why `captureVisibleTab` and not `canvas.drawImage(video)`.** PLAN.md said to
 cut this feature "without regret if canvas tainting fights back". It fights
 back: video is served cross-origin on every real player, drawing it onto a

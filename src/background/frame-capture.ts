@@ -25,10 +25,18 @@ import {
  * If `cropFor` cannot confine the image to the video rectangle it returns null
  * and nothing is sent. The uncropped bitmap never leaves this function.
  *
- * PERMISSIONS: no new manifest entry. `captureVisibleTab` is satisfied by the
- * host permission the extension already holds for the page it is capturing on —
- * youtube.com statically, and each opt-in site at runtime. An extension that
- * asked for `<all_urls>` to screenshot would deserve to be declined.
+ * PERMISSIONS: this needs `activeTab`, and host permission is NOT enough —
+ * `captureVisibleTab` accepts only `<all_urls>` or `activeTab`. That was
+ * assumed wrong when this was written and only a real run caught it; the error
+ * is literally "Either the '<all_urls>' or 'activeTab' permission is required."
+ *
+ * `activeTab` over `<all_urls>` is the whole difference between a reasonable
+ * extension and one people should decline. It grants access to ONE tab, only at
+ * the moment the user invokes the extension — the `chrome.commands` hotkey
+ * counts as that invocation — and it lapses when the tab navigates. It also
+ * adds no line to the install prompt, so installing still reads only
+ * "youtube.com". `<all_urls>` would ask to read every site the user visits, to
+ * take one screenshot of a video they are already watching.
  */
 export async function captureFrame(
   tabId: number,

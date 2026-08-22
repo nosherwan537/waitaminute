@@ -100,8 +100,11 @@ It is **off by default**, because it is a screenshot going to a third party:
 - It goes to the same provider your transcripts already go to, and nowhere else.
 - Nothing is stored. The picture is not written to your Doc, your local
   Markdown, or the capture log.
-- No extra permission is needed. The extension uses the site access you already
-  granted for that page.
+- Taking a screenshot needs Chrome's `activeTab` permission, which the
+  extension asks for. It applies to one tab, only in the moment you press the
+  hotkey, and it lapses when that tab navigates — it is not access to your
+  browsing. It adds nothing to the install prompt, which still asks only for
+  youtube.com.
 
 Needs a model that accepts images. With one that does not, the note is still
 written from the captions and the `Frame` column in the log stays empty — that

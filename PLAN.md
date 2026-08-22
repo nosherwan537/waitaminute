@@ -116,8 +116,8 @@ regret if canvas tainting fights back.
 cross-origin video stream taints any canvas it is drawn onto, so `toDataURL` throws on
 every real player. Rather than cut, the capture moved to `chrome.tabs.captureVisibleTab`
 — which sidesteps tainting but photographs the whole viewport, so `lib/frame.ts` crops
-back to the player and refuses to send anything it cannot confine. Off by default, no
-new manifest permission, and it can never cost a note: the capture cannot throw, and a
+back to the player and refuses to send anything it cannot confine. Off by default,
+`activeTab` only (never `<all_urls>`), and it can never cost a note: the capture cannot throw, and a
 provider that rejects the image gets asked again without it.
 
 **13. Dogfood two weeks** — did you stop scrubbing back? What broke? What felt slow?
