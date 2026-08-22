@@ -15,6 +15,7 @@ import { shapeError, usageFrom, type Adapter } from "./types";
  *   - the model name is part of the URL path, not the body
  *   - the system prompt is `system_instruction`, a sibling of `contents`
  *   - text arrives as an array of parts that must be joined
+ *   - how you turn thinking DOWN changed between model generations, see below
  */
 
 interface GeminiBody {
@@ -31,12 +32,45 @@ interface GeminiBody {
   };
 }
 
+/**
+ * Pure. How to hold thinking down for one model, or `undefined` to say nothing.
+ *
+ * Gemini 2.5 thinks by DEFAULT, its thoughts are billed as output, and they are
+ * drawn from the same `maxOutputTokens` budget as the note. Left alone, Flash
+ * spent ~8k tokens and 30-40s deliberating over a transcript cleanup — a task
+ * the premise defines as reconstruction, not judgement. Thoughts can also eat
+ * the whole budget and return no text at all.
+ *
+ * There is NO single request shape that holds thinking down across generations,
+ * which is why this is a function and not a constant:
+ *
+ *   - 2.x  `thinkingBudget: 0` switches thinking off outright.
+ *   - 3.x  `thinkingBudget: 0` is a hard 400 INVALID_ARGUMENT — 3.x cannot turn
+ *          thinking off at all, the same way 2.5 PRO could not. `thinkingLevel`
+ *          is its replacement, and `"low"` is the floor. Measured on
+ *          gemini-3.6-flash: no field 90 thought tokens, `"low"` 66.
+ *
+ * The model name is user-typed and drifts faster than this extension ships, so
+ * an unrecognised name gets NO thinking field. That fails toward "works, costs
+ * more" rather than a 400 mid-lecture — losing a capture is the expensive
+ * failure here, spending extra tokens is the cheap one.
+ */
+export function thinkingConfigFor(model: string): Record<string, unknown> | undefined {
+  const generation = /(?:^|[^0-9])gemini-([0-9]+)/i.exec(model)?.[1];
+  if (generation === undefined) return undefined;
+  const n = Number(generation);
+  if (n >= 3) return { thinkingLevel: "low" };
+  if (n >= 1) return { thinkingBudget: 0 };
+  return undefined;
+}
+
 export const geminiAdapter: Adapter = {
   id: "gemini",
 
   buildRequest(target, req) {
     // encodeURIComponent: the model name is user-typed and lands in the path.
     const model = encodeURIComponent(target.model);
+    const thinking = thinkingConfigFor(target.model);
     return {
       url: `${target.baseUrl}/models/${model}:generateContent`,
       init: {
@@ -50,17 +84,10 @@ export const geminiAdapter: Adapter = {
           contents: [{ role: "user", parts: [{ text: req.user }] }],
           generationConfig: {
             maxOutputTokens: req.maxTokens,
-            // Gemini 2.5 thinks by DEFAULT, and its thoughts are billed as
-            // output and drawn from the same `maxOutputTokens` budget. Left
-            // unset, Flash spent ~7-8k tokens and 30-40s deliberating over a
-            // transcript cleanup — a task the premise defines as reconstruction,
-            // not judgement. Worse, thoughts can eat the entire budget and
-            // return zero text, which surfaces as "response contained no text".
-            //
-            // 0 disables thinking on Flash. Note that 2.5 PRO cannot disable it
-            // (its floor is 128) and rejects 0 with a 400 — hence the preset
-            // note steering to Flash for this task.
-            thinkingConfig: { thinkingBudget: 0 },
+            // See thinkingConfigFor: the shape depends on the model generation,
+            // and the wrong one is a 400 rather than a slow note. Spread so an
+            // unrecognised model sends no thinking field at all.
+            ...(thinking ? { thinkingConfig: thinking } : {}),
           },
         }),
       },

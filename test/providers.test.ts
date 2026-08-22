@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { anthropicAdapter } from "../src/lib/providers/anthropic";
 import { openAiCompatibleAdapter } from "../src/lib/providers/openai";
-import { geminiAdapter } from "../src/lib/providers/gemini";
+import { geminiAdapter, thinkingConfigFor } from "../src/lib/providers/gemini";
 import { PRESETS, resolveTarget, originFor, complete, TIMEOUT_MS } from "../src/lib/providers";
 import type { ProviderConfig, ResolvedTarget } from "../src/lib/providers";
 import { NamedError } from "../src/lib/errors";
@@ -154,12 +154,53 @@ describe("gemini adapter", () => {
     expect(body["contents"]).toEqual([{ role: "user", parts: [{ text: "usr" }] }]);
   });
 
-  it("disables thinking, which is on by default and billed as output", () => {
-    const body = bodyOf(geminiAdapter.buildRequest(target({ adapter: "gemini" }), REQ).init);
+  it("switches thinking off on 2.x, which is on by default and billed as output", () => {
     // Regression guard for the first real dogfooding bug: Flash spent ~8k
     // tokens and 30-40s thinking about a cleanup pass before this was set.
+    const body = bodyOf(
+      geminiAdapter.buildRequest(target({ adapter: "gemini", model: "gemini-2.5-flash" }), REQ)
+        .init,
+    );
     expect(body["generationConfig"]).toMatchObject({ thinkingConfig: { thinkingBudget: 0 } });
   });
+
+  it("turns thinking down with thinkingLevel on 3.x, which cannot switch it off", () => {
+    // Regression guard for the second dogfooding bug: `thinkingBudget: 0` is a
+    // hard 400 INVALID_ARGUMENT on gemini-3.6-flash, so every capture died.
+    const body = bodyOf(
+      geminiAdapter.buildRequest(target({ adapter: "gemini", model: "gemini-3.6-flash" }), REQ)
+        .init,
+    );
+    expect(body["generationConfig"]).toMatchObject({ thinkingConfig: { thinkingLevel: "low" } });
+    expect(JSON.stringify(body)).not.toContain("thinkingBudget");
+  });
+
+  it("sends no thinking field for a model name it does not recognise", () => {
+    // Names drift faster than this ships. Failing toward a slower, pricier note
+    // beats a 400 the user meets mid-lecture.
+    const body = bodyOf(
+      geminiAdapter.buildRequest(target({ adapter: "gemini", model: "some-new-model" }), REQ).init,
+    );
+    expect(body["generationConfig"]).not.toHaveProperty("thinkingConfig");
+  });
+
+  it.each([
+    ["gemini-2.5-flash", { thinkingBudget: 0 }],
+    ["gemini-2.0-flash", { thinkingBudget: 0 }],
+    ["gemini-3.6-flash", { thinkingLevel: "low" }],
+    ["gemini-3-pro-preview", { thinkingLevel: "low" }],
+    ["models/gemini-4.0-flash", { thinkingLevel: "low" }],
+    ["GEMINI-3.6-FLASH", { thinkingLevel: "low" }],
+  ])("picks the thinking shape for %s by generation", (model, expected) => {
+    expect(thinkingConfigFor(model)).toEqual(expected);
+  });
+
+  it.each(["", "gpt-4o", "llama-3.3-70b", "gemini-flash-latest"])(
+    "declines to guess a thinking shape for %s",
+    (model) => {
+      expect(thinkingConfigFor(model)).toBeUndefined();
+    },
+  );
 
   it("treats a MAX_TOKENS finish as a failure, not a finished note", () => {
     expect(() =>
