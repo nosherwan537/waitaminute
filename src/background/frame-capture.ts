@@ -53,9 +53,13 @@ export async function captureFrame(
     const shot = await chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 80 });
     if (!shot) return undefined;
 
+    // Check what came back before decoding it. A capture that is not a base64
+    // image data URL is not something to hand to createImageBitmap.
     const parts = splitDataUrl(shot);
-    if (!parts) return undefined;
+    if (!parts?.mimeType.startsWith("image/")) return undefined;
 
+    // `fetch` on the data URL is how a service worker gets a Blob — there is no
+    // `URL.createObjectURL` here, and `createImageBitmap` needs a Blob.
     const blob = await (await fetch(shot)).blob();
     const bitmap = await createImageBitmap(blob);
 
