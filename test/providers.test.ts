@@ -7,6 +7,8 @@ import type { ProviderConfig, ResolvedTarget } from "../src/lib/providers";
 import { NamedError } from "../src/lib/errors";
 
 const REQ = { system: "sys", user: "usr", maxTokens: 4096 };
+const IMAGE = { mimeType: "image/jpeg", dataBase64: "QUJD" };
+const REQ_IMG = { ...REQ, image: IMAGE };
 
 function target(over: Partial<ResolvedTarget> = {}): ResolvedTarget {
   return { adapter: "anthropic", baseUrl: "", apiKey: "k", model: "m", ...over };
@@ -504,6 +506,141 @@ describe("complete", () => {
   it("throws only NamedErrors, so every path maps to a toast", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("x", { status: 418 })));
     await expect(complete(t, REQ, async () => {})).rejects.toBeInstanceOf(NamedError);
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("frame attachment (PLAN.md step 12)", () => {
+  it("gemini sends inline_data ahead of the text part", () => {
+    const body = bodyOf(
+      geminiAdapter.buildRequest(target({ adapter: "gemini" }), REQ_IMG).init,
+    );
+    const parts = (body["contents"] as Array<{ parts: unknown[] }>)[0]!.parts;
+    expect(parts[0]).toEqual({ inline_data: { mime_type: "image/jpeg", data: "QUJD" } });
+    expect(parts[1]).toEqual({ text: "usr" });
+  });
+
+  it("anthropic sends a base64 image block ahead of the text block", () => {
+    const body = bodyOf(anthropicAdapter.buildRequest(target(), REQ_IMG).init);
+    const content = (body["messages"] as Array<{ content: unknown[] }>)[0]!.content;
+    expect(content[0]).toEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/jpeg", data: "QUJD" },
+    });
+    expect(content[1]).toEqual({ type: "text", text: "usr" });
+  });
+
+  it("openai-compatible sends an image_url carrying a data URL", () => {
+    const body = bodyOf(
+      openAiCompatibleAdapter.buildRequest(
+        target({ adapter: "openai-compatible", baseUrl: "https://x/v1" }),
+        REQ_IMG,
+      ).init,
+    );
+    const content = (body["messages"] as Array<{ content: unknown }>)[1]!.content as Array<
+      Record<string, unknown>
+    >;
+    expect(content[0]).toEqual({
+      type: "image_url",
+      image_url: { url: "data:image/jpeg;base64,QUJD" },
+    });
+    expect(content[1]).toEqual({ type: "text", text: "usr" });
+  });
+
+  it.each([
+    ["anthropic", anthropicAdapter, target()],
+    [
+      "openai-compatible",
+      openAiCompatibleAdapter,
+      target({ adapter: "openai-compatible", baseUrl: "https://x/v1" }),
+    ],
+  ] as const)("%s keeps content a plain string when there is no frame", (_id, adapter, t) => {
+    // Local and older servers only implement the string form. Sending the
+    // array shape unconditionally would break them for a feature they are not
+    // using.
+    const body = bodyOf(adapter.buildRequest(t, REQ).init);
+    const messages = body["messages"] as Array<{ role: string; content: unknown }>;
+    expect(typeof messages[messages.length - 1]!.content).toBe("string");
+  });
+
+  it("gemini omits the image part entirely when there is no frame", () => {
+    const body = bodyOf(geminiAdapter.buildRequest(target({ adapter: "gemini" }), REQ).init);
+    const parts = (body["contents"] as Array<{ parts: unknown[] }>)[0]!.parts;
+    expect(parts).toEqual([{ text: "usr" }]);
+  });
+});
+
+describe("complete drops a rejected frame", () => {
+  const t = target({ adapter: "openai-compatible", baseUrl: "https://x/v1" });
+  const ok = (text: string) =>
+    new Response(JSON.stringify({ choices: [{ message: { content: text } }] }), { status: 200 });
+
+  it("retries text-only when the provider refuses the image, and says so", async () => {
+    // A text-only model must not cost the user a note over an optional extra.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("no vision on this model", { status: 400 }))
+      .mockResolvedValueOnce(ok("recovered"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await complete(t, REQ_IMG);
+    expect(result).toMatchObject({ text: "recovered", imageDropped: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const second = bodyOf(fetchMock.mock.calls[1]![1] as RequestInit);
+    expect(JSON.stringify(second)).not.toContain("QUJD");
+    vi.unstubAllGlobals();
+  });
+
+  it("does not sleep before the image-free attempt, which is a different request", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(new Response("", { status: 400 })).mockResolvedValueOnce(ok("x")),
+    );
+    await complete(t, REQ_IMG, sleep);
+    expect(sleep).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("drops the frame once only, then surfaces the real error", async () => {
+    // Otherwise a genuinely bad key would loop instead of telling the user.
+    const fetchMock = vi.fn().mockResolvedValue(new Response("bad key", { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(complete(t, REQ_IMG)).rejects.toThrow(/ApiKeyInvalid/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
+  it("fails immediately with no image to drop", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("bad key", { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(complete(t, REQ)).rejects.toThrow(/ApiKeyInvalid/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("leaves imageDropped unset when the frame was accepted", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok("fine")));
+    const result = await complete(t, REQ_IMG);
+    expect(result.imageDropped).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  it("still retries a 429 with backoff while carrying a frame", async () => {
+    // The image path must not disturb the ordinary retry policy.
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("slow down", { status: 429 }))
+      .mockResolvedValueOnce(ok("second time"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await complete(t, REQ_IMG, sleep);
+    expect(result).toMatchObject({ text: "second time" });
+    expect(sleep).toHaveBeenCalledWith(2000);
+    // The frame survived a retryable failure — only a refusal drops it.
+    expect(JSON.stringify(bodyOf(fetchMock.mock.calls[1]![1] as RequestInit))).toContain("QUJD");
     vi.unstubAllGlobals();
   });
 });
