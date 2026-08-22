@@ -17,12 +17,14 @@ src/
   types.ts              shared types + the WINDOWS table (single source of hotkey offsets)
   lib/slice.ts          PURE. slice(), evictOldCues(), formatTimestamp(), deepLink()
   lib/errors.ts         NamedError + the PLAN.md error registry names
+  lib/frame.ts          PURE frame geometry. The crop is a privacy boundary.
   lib/notegen.ts        PURE prompt building + reply parsing, plus the thin call shell
   lib/providers/        model routing: 3 adapters, N presets (see below)
   content/interceptor.ts   MAIN world. Patches fetch/XHR. SECURITY-CRITICAL.
   content/content-script.ts ISOLATED world. Owns the cue list, talks to the SW.
   content/toast.ts      the entire product UI. Shadow DOM, never steals focus.
   background/service-worker.ts  stateless. The ONLY place secrets may live.
+  background/frame-capture.ts   tab screenshot -> cropped frame. Never throws.
   options/              key entry + capture counts
 scripts/build.mjs       one Rollup build per MV3 execution context (see its header)
 test/                   vitest, no DOM, no network
@@ -210,10 +212,13 @@ Three rules, all load-bearing:
    dragged between monitors — and disagreeing means cropping the WRONG
    rectangle, which is the failure that leaks the rest of the screen.
 3. **A frame may never cost a note.** `captureFrame` cannot throw; every failure
-   returns undefined. `complete()` drops the image and retries once when a
+   returns undefined. `generateNote` drops the image and asks once more when a
    provider refuses it, because vision support is a property of the model, the
    model name is free text, and any built-in list of which names take images
-   would be wrong within weeks.
+   would be wrong within weeks. That retry lives in `notegen.ts` and NOT in
+   `complete()` on purpose: the prompt has to change with the image, since
+   `FRAME_GUIDANCE` states that a picture is attached. Dropping one without the
+   other tells the model to look at something that is not there.
 
 The prompt matters as much as the plumbing. `FRAME_GUIDANCE` in `notegen.ts`
 scopes the picture to **reconstruction**: resolving what "this" and "here"
