@@ -17,7 +17,7 @@ import { appendNote, localDay } from "../lib/notes-store";
 import { writeDayFile } from "./local-sink";
 import { appendToDoc, readDocRef } from "./docs-sink";
 import { isConfigured } from "./google-auth";
-import { syncContentScripts } from "./site-registry";
+import { readSites, shouldHaveContentScript, syncContentScripts } from "./site-registry";
 import { armTab, armedTab, audioSlice, disarm, wavBlob } from "./audio-capture";
 import { resolveTranscription, transcribe } from "../lib/providers";
 import { WINDOWS } from "../types";
@@ -54,6 +54,46 @@ async function loadConfig(): Promise<ProviderConfig> {
 /** Errors whose only fix is on the options page. Opening it IS the useful action. */
 const OPENS_OPTIONS = new Set(["ApiKeyMissing", "ApiKeyInvalid", "ModelNotFound"]);
 
+/**
+ * Say "reload this page" from the service worker side, because the content
+ * script that would have shown a toast is the thing that died.
+ *
+ * A badge rather than a notification: it needs no extra permission, it cannot
+ * steal focus from the video, and Chrome clears per-tab badge text on
+ * navigation — so the warning disappears exactly when the reload fixes it.
+ *
+ * Re-injecting automatically is NOT the fix. YouTube's interceptor must run at
+ * `document_start` to see the caption fetches, so a script injected mid-page
+ * would answer the next hotkey with an empty buffer: a capture that fails for a
+ * second, more confusing reason.
+ */
+async function flagStalePage(
+  tabId: number,
+  command: CommandName,
+  videoTitle: string,
+): Promise<void> {
+  console.warn("[heystop] PageNeedsReload", "content script is stale; reload the tab");
+  // AGENTS.md: every failure path reaches the log, or it is invisible during
+  // dogfooding. This one especially — how often an extension reload silently
+  // costs a capture is a number worth having.
+  await appendLog({
+    id: Date.now(),
+    command,
+    source: "captions",
+    latencyMs: 0,
+    outcome: "PageNeedsReload",
+    model: "",
+    videoTitle,
+  });
+  try {
+    await chrome.action.setBadgeText({ tabId, text: "!" });
+    await chrome.action.setBadgeBackgroundColor({ tabId, color: "#b3261e" });
+    await chrome.action.setTitle({ tabId, title: "heystop: reload this page to reconnect" });
+  } catch {
+    // The tab closed between the failed sendMessage and here. Nothing to warn.
+  }
+}
+
 chrome.commands.onCommand.addListener(async (command) => {
   if (!isCommand(command)) return;
 
@@ -68,7 +108,16 @@ chrome.commands.onCommand.addListener(async (command) => {
       command,
     })) as SliceResponse;
   } catch {
-    // No content script here: the extension isn't active on this page.
+    // Two very different cases arrive here as the same rejection, and treating
+    // them alike is what made the hotkey do nothing at all after an extension
+    // reload — no toast, no log, premise 8 broken.
+    //
+    // A page the extension has no business on is correct and stays silent. A
+    // page it IS registered for means the content script is dead: reloading an
+    // unpacked extension orphans every script already running in an open tab.
+    if (shouldHaveContentScript(tab.url, await readSites())) {
+      await flagStalePage(tabId, command, tab.title ?? "");
+    }
     return;
   }
 

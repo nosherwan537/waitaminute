@@ -54,6 +54,40 @@ export function toMatchPattern(input: string): string {
   return `${url.protocol}//${url.hostname}/*`;
 }
 
+/**
+ * YouTube's pair is declared statically in the manifest, not registered here,
+ * because the MAIN-world interceptor must run at `document_start`. It still
+ * counts as a page that should answer, so it lives alongside the stored list.
+ */
+export const STATIC_MATCH = "https://www.youtube.com/*";
+
+/** Pure. Does a `scheme://host/*` match pattern cover this URL? */
+export function patternCovers(pattern: string, url: string): boolean {
+  const [scheme, rest] = pattern.split("://");
+  if (!scheme || !rest) return false;
+  const host = rest.replace(/\/\*$/, "");
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === `${scheme}:` && parsed.hostname === host;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Pure. Should this page have had a content script listening?
+ *
+ * Distinguishes the two cases a failed `sendMessage` collapses into one: an
+ * ordinary page the extension has no business on (stay silent) versus a page it
+ * IS registered for, whose script is dead. The second happens on every
+ * unpacked-extension reload — the tab keeps the old, disconnected script — and
+ * swallowing it means the hotkey does nothing at all with no explanation.
+ */
+export function shouldHaveContentScript(url: string | undefined, sites: string[]): boolean {
+  if (!url) return false;
+  return [STATIC_MATCH, ...sites].some((pattern) => patternCovers(pattern, url));
+}
+
 /** Pure. A stable, valid script ID derived from the pattern. */
 export function scriptIdFor(pattern: string): string {
   return SCRIPT_ID_PREFIX + pattern.replace(/[^a-zA-Z0-9]/g, "-");
