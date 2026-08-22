@@ -185,7 +185,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     // which has no picture by definition.
     const frame =
       viewport && tab.windowId !== undefined && (await frameCaptureEnabled())
-        ? await captureFrame(tab.windowId, viewport)
+        ? await captureFrame(tabId, tab.windowId, viewport)
         : undefined;
 
     const { note, usage, model, frameUsed } = await generateNote(config, slice, frame);

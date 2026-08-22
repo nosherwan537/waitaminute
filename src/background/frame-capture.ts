@@ -31,10 +31,23 @@ import {
  * asked for `<all_urls>` to screenshot would deserve to be declined.
  */
 export async function captureFrame(
+  tabId: number,
   windowId: number,
   view: ViewportInfo,
 ): Promise<FrameImage | undefined> {
   try {
+    // `captureVisibleTab` photographs whatever is ACTIVE in the window, not the
+    // tab that answered the hotkey — and several awaits have passed since then.
+    // Switch tabs in that gap and this would photograph the new one, measured
+    // against the old one's geometry: the wrong page, cropped by the wrong
+    // rectangle. Usually the permission check would refuse it, but not if the
+    // user happens to have opted that site in too.
+    //
+    // Premise 7 says the user is still watching and has not moved, so this
+    // costs nothing in the normal case and closes the one case where it matters.
+    const [active] = await chrome.tabs.query({ active: true, windowId });
+    if (active?.id !== tabId) return undefined;
+
     // JPEG, not PNG: a video frame is photographic, and PNG of one runs several
     // megabytes before it is even cropped.
     const shot = await chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 80 });
