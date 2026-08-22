@@ -44,7 +44,27 @@ export const anthropicAdapter: Adapter = {
           // Cleanup is a shallow task. Low effort keeps spend down without the
           // failure modes that come from disabling thinking outright.
           output_config: { effort: "low" },
-          messages: [{ role: "user", content: req.user }],
+          messages: [
+            {
+              role: "user",
+              // A bare string when there is no frame: the block form is
+              // equivalent, but the string form is what every older model and
+              // proxy in front of this API is certain to accept.
+              content: req.image
+                ? [
+                    {
+                      type: "image",
+                      source: {
+                        type: "base64",
+                        media_type: req.image.mimeType,
+                        data: req.image.dataBase64,
+                      },
+                    },
+                    { type: "text", text: req.user },
+                  ]
+                : req.user,
+            },
+          ],
         }),
       },
     };

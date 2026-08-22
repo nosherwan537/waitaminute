@@ -43,6 +43,13 @@ export interface LogEntry {
   usage?: TokenUsage;
   /** Resolved model, not the configured one — they differ when a preset default fills in. */
   model: string;
+  /**
+   * True when a video frame was attached AND the provider accepted it
+   * (PLAN.md step 12). Absent means caption-only, which is also what a rejected
+   * frame produces — so a column of blanks with the setting switched on is the
+   * signal that the chosen model does not take images.
+   */
+  frame?: boolean;
   videoTitle: string;
 }
 

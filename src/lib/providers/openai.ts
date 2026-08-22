@@ -44,7 +44,24 @@ export const openAiCompatibleAdapter: Adapter = {
           max_tokens: req.maxTokens,
           messages: [
             { role: "system", content: req.system },
-            { role: "user", content: req.user },
+            {
+              role: "user",
+              // Plain string unless there is a frame. Many compatible servers
+              // (local ones especially) only implement the string form, and
+              // sending the array shape unconditionally would break them for a
+              // feature they were not using.
+              content: req.image
+                ? [
+                    {
+                      type: "image_url",
+                      image_url: {
+                        url: `data:${req.image.mimeType};base64,${req.image.dataBase64}`,
+                      },
+                    },
+                    { type: "text", text: req.user },
+                  ]
+                : req.user,
+            },
           ],
         }),
       },

@@ -51,6 +51,7 @@ const docStateEl = $<HTMLSpanElement>("doc-state");
 const siteInput = $<HTMLInputElement>("site-input");
 const siteAddButton = $<HTMLButtonElement>("site-add");
 const siteList = $<HTMLUListElement>("site-list");
+const frameCaptureInput = $<HTMLInputElement>("frame-capture");
 
 let saveTimer: number | undefined;
 
@@ -286,6 +287,7 @@ function headerRow(): HTMLTableRowElement {
     ["Took", "num"],
     ["Tokens", "num"],
     ["Cost", "num"],
+    ["Frame", "num"],
   ] as const) {
     const th = document.createElement("th");
     th.textContent = label;
@@ -345,6 +347,9 @@ function renderLog(entries: readonly LogEntry[], rates: Rates): void {
     cell(row, `${(entry.latencyMs / 1000).toFixed(1)}s`, "num");
     cell(row, entry.usage ? `${entry.usage.input}/${entry.usage.output}` : "—", "num");
     cell(row, formatCost(estimateCost(entry.usage, rates)), "num");
+    // A dot, not a word: this column is scanned, not read. A run of blanks
+    // while the setting is on means the model is refusing images.
+    cell(row, entry.frame ? "●" : "", "num");
   }
 }
 
@@ -358,6 +363,15 @@ for (const input of [rateInInput, rateOutInput]) {
     void refreshLog();
   });
 }
+
+frameCaptureInput.addEventListener("change", () => {
+  void chrome.storage.local.set({ frameCapture: frameCaptureInput.checked });
+  say(
+    frameCaptureInput.checked
+      ? "Frames on. Each note now sends a picture of the player to your provider."
+      : "Frames off. Notes are written from captions alone.",
+  );
+});
 
 clearButton.addEventListener("click", async () => {
   await clearLog();
@@ -381,9 +395,14 @@ async function load(): Promise<void> {
     presetSelect.append(option);
   }
 
-  const stored = (await chrome.storage.local.get(["provider", "captureCounts"])) as {
+  const stored = (await chrome.storage.local.get([
+    "provider",
+    "captureCounts",
+    "frameCapture",
+  ])) as {
     provider?: ProviderConfig;
     captureCounts?: Record<string, number>;
+    frameCapture?: boolean;
   };
   const config: ProviderConfig = {
     presetId: DEFAULT_PRESET_ID,
@@ -404,6 +423,10 @@ async function load(): Promise<void> {
   // up the wrong key for most of the evening in a western timezone.
   const today = counts[localDay()] ?? 0;
   if (total > 0) say(`${total} notes captured (${today} today).`);
+
+  // Strict true: anything else, including a value written by an older version
+  // that never had this setting, reads as off.
+  frameCaptureInput.checked = stored.frameCapture === true;
 
   renderDoc(await readDocRef());
   renderSites(await readSites());

@@ -8,6 +8,7 @@
  */
 
 import { slice, evictOldCues, deepLinkFor } from "../lib/slice";
+import type { ViewportInfo } from "../lib/frame";
 import { readTrackCues } from "./track-source";
 import {
   WINDOWS,
@@ -108,7 +109,34 @@ function videoTitle(): string {
   return document.title.replace(/\s*[-|·—]\s*(YouTube|Vimeo|Coursera|edX)\s*$/i, "").trim();
 }
 
-type SliceReply = { ok: true; slice: TranscriptSlice } | { ok: false; reason: string };
+type SliceReply =
+  | { ok: true; slice: TranscriptSlice; viewport?: ViewportInfo }
+  | { ok: false; reason: string };
+
+/**
+ * Where the video sits, for the optional frame capture (PLAN.md step 12).
+ *
+ * Measured here and sent to the service worker rather than captured here: the
+ * content script cannot photograph the tab, and drawing the <video> to a canvas
+ * taints it on any cross-origin stream — which is every real player. See
+ * `lib/frame.ts`.
+ *
+ * Returns undefined when the player is not usefully on screen. A video scrolled
+ * out of view, collapsed to a miniplayer, or not yet laid out has no frame worth
+ * sending, and the service worker will simply not attach one.
+ */
+function measureViewport(video: HTMLVideoElement): ViewportInfo | undefined {
+  const rect = video.getBoundingClientRect();
+  const width = document.documentElement.clientWidth;
+  const height = document.documentElement.clientHeight;
+  if (!(width > 0 && height > 0)) return undefined;
+  if (!(rect.width > 0 && rect.height > 0)) return undefined;
+  return {
+    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    width,
+    height,
+  };
+}
 
 /**
  * Produce a slice, or the reason there isn't one.
@@ -164,6 +192,10 @@ async function buildSlice(command: CommandName): Promise<SliceReply> {
   showToast("processing", "Noting that...");
   return {
     ok: true,
+    // Measured AFTER the slice is known good, so a refused capture never
+    // measures the page, and at the moment of capture rather than earlier —
+    // the frame should match the words as closely as it can.
+    viewport: measureViewport(video),
     slice: {
       text: result.text,
       startSec: result.startSec,

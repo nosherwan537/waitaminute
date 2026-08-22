@@ -55,6 +55,8 @@
                 border-top: 1px solid rgba(128,128,128,.25); }
       .google h2 { font-size: 15px; margin: 0 0 4px; }
       .google-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+      .toggle { display: flex; align-items: center; gap: 10px; font-weight: 500; cursor: pointer; }
+      .toggle input { width: 16px; height: 16px; margin: 0; cursor: pointer; }
       #doc-state { font-size: 13px; }
 
       .sites { margin-top: 32px; padding-top: 20px;
@@ -131,6 +133,26 @@
         and removing a site hands the permission back.
       </div>
       <ul id="site-list"></ul>
+    </div>
+
+    <div class="frame">
+      <h2>Video frame</h2>
+      <div class="hint">
+        Off by default. When on, each capture also sends a picture of the video
+        at that moment to <strong>your model provider</strong>, alongside the
+        transcript. It helps when a speaker says "as you can see here" and the
+        answer is on the slide, not in their words.
+      </div>
+      <label class="toggle">
+        <input id="frame-capture" type="checkbox" />
+        <span>Send the video frame with each note</span>
+      </label>
+      <div class="hint">
+        The screenshot is cropped to the video player before anything is sent,
+        and it is dropped entirely if it cannot be. Needs a model that accepts
+        images — with one that does not, the note is still written from the
+        captions alone and the <code>frame</code> column below stays empty.
+      </div>
     </div>
 
     <div class="log">

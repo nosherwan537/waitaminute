@@ -81,7 +81,20 @@ export const geminiAdapter: Adapter = {
         },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: req.system }] },
-          contents: [{ role: "user", parts: [{ text: req.user }] }],
+          contents: [
+            {
+              role: "user",
+              // Image FIRST, text second. Google's own guidance for
+              // single-image prompts, and the text is what carries the
+              // instructions about how to use the picture.
+              parts: [
+                ...(req.image
+                  ? [{ inline_data: { mime_type: req.image.mimeType, data: req.image.dataBase64 } }]
+                  : []),
+                { text: req.user },
+              ],
+            },
+          ],
           generationConfig: {
             maxOutputTokens: req.maxTokens,
             // See thinkingConfigFor: the shape depends on the model generation,

@@ -18,13 +18,15 @@ import { writeDayFile } from "./local-sink";
 import { appendToDoc, readDocRef } from "./docs-sink";
 import { isConfigured } from "./google-auth";
 import { readSites, shouldHaveContentScript, syncContentScripts } from "./site-registry";
+import { captureFrame } from "./frame-capture";
+import type { ViewportInfo } from "../lib/frame";
 import { armTab, armedTab, audioSlice, disarm, wavBlob } from "./audio-capture";
 import { resolveTranscription, transcribe } from "../lib/providers";
 import { WINDOWS } from "../types";
 import type { CommandName, TranscriptSlice, ToastMessage } from "../types";
 
 type SliceResponse =
-  | { ok: true; slice: TranscriptSlice }
+  | { ok: true; slice: TranscriptSlice; viewport?: ViewportInfo }
   | { ok: false; reason: string };
 
 function isCommand(name: string): name is CommandName {
@@ -49,6 +51,21 @@ async function loadConfig(): Promise<ProviderConfig> {
     model: "",
     ...stored.provider,
   };
+}
+
+/**
+ * Is the optional frame capture (PLAN.md step 12) switched on?
+ *
+ * OFF by default, deliberately. It photographs the visible tab before cropping
+ * to the player, and it sends that picture to whichever model provider the user
+ * chose. Neither is something to start doing on a user's behalf — it has to be a
+ * decision they made on the options page, having read what it does.
+ */
+async function frameCaptureEnabled(): Promise<boolean> {
+  const { frameCapture } = (await chrome.storage.local.get("frameCapture")) as {
+    frameCapture?: boolean;
+  };
+  return frameCapture === true;
 }
 
 /** Errors whose only fix is on the options page. Opening it IS the useful action. */
@@ -125,8 +142,12 @@ chrome.commands.onCommand.addListener(async (command) => {
   // case PLAN.md step 11 exists for. Every other refusal (debounced, no video,
   // empty window) is correct and already toasted.
   let slice: TranscriptSlice;
+  // Where the player sits, for the optional frame. Absent on the audio path,
+  // which has no picture by definition.
+  let viewport: ViewportInfo | undefined;
   if (response?.ok) {
     slice = response.slice;
+    viewport = response.viewport;
   } else if (response?.reason === "CaptionsUnavailable" && (await armedTab()) === tabId) {
     const fromAudio = await sliceFromAudio(tabId, command);
     if (!fromAudio) return; // sliceFromAudio toasted the reason
@@ -141,8 +162,10 @@ chrome.commands.onCommand.addListener(async (command) => {
   const logCapture = (
     outcome: string,
     spent: { usage?: LogEntry["usage"]; model: string } | undefined,
+    frameUsed = false,
   ) =>
     appendLog({
+      ...(frameUsed ? { frame: true as const } : {}),
       id: startedAt,
       command,
       source: slice.source ?? "captions",
@@ -155,7 +178,17 @@ chrome.commands.onCommand.addListener(async (command) => {
 
   try {
     const config = await loadConfig();
-    const { note, usage, model } = await generateNote(config, slice);
+
+    // Captions come first and the frame is a bonus, so this is the one place
+    // allowed to be slow-ish and the one place allowed to give up quietly.
+    // `captureFrame` never throws; `viewport` is absent on the audio path,
+    // which has no picture by definition.
+    const frame =
+      viewport && tab.windowId !== undefined && (await frameCaptureEnabled())
+        ? await captureFrame(tab.windowId, viewport)
+        : undefined;
+
+    const { note, usage, model, frameUsed } = await generateNote(config, slice, frame);
 
     // Persist BEFORE writing the file. Storage is the source of truth, so from
     // this line on the note cannot be lost — only the file can be out of date,
@@ -189,7 +222,7 @@ chrome.commands.onCommand.addListener(async (command) => {
 
     // Logged before the toast: the toast can fail on a closed tab, and losing
     // the confirmation must not also lose the record that the capture happened.
-    await logCapture(problem?.name ?? "ok", { usage, model });
+    await logCapture(problem?.name ?? "ok", { usage, model }, frameUsed);
 
     await toastTo(tabId, {
       state: problem ? "error" : "success",

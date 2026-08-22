@@ -53,6 +53,16 @@ export interface CompletionRequest {
   system: string;
   user: string;
   maxTokens: number;
+  /**
+   * Optional video frame (PLAN.md step 12), as bare base64 with a mime type.
+   *
+   * Every adapter must treat this as droppable. `complete` retries WITHOUT it
+   * when a provider rejects the request, because the model the user typed may
+   * simply not take images — model names are editable and vision support is not
+   * something this extension can know in advance. A note without the picture is
+   * the whole product; a failed capture is not.
+   */
+  image?: { mimeType: string; dataBase64: string };
 }
 
 /** The resolved target of a call: adapter + endpoint + credentials. */
