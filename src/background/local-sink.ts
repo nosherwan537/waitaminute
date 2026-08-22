@@ -2,7 +2,7 @@ import { NamedError } from "../lib/errors";
 import { dayMarkdown, type StoredNote } from "../lib/notes-store";
 
 /**
- * LocalMdSink — one Markdown file per day, under Downloads/heystop/.
+ * LocalMdSink — one Markdown file per day, under Downloads/heystop-notes/.
  *
  * Two MV3 constraints shape this, and neither is obvious:
  *
@@ -18,7 +18,7 @@ import { dayMarkdown, type StoredNote } from "../lib/notes-store";
  * day and a day is a few dozen KB.
  */
 
-const FOLDER = "heystop";
+const FOLDER = "heystop-notes";
 
 /** Pure. UTF-8 safe base64, chunked so a long day doesn't blow the call stack. */
 export function utf8ToBase64(text: string): string {
@@ -37,7 +37,7 @@ export function toDataUrl(markdown: string): string {
 }
 
 /**
- * Pure. `heystop/2026-08-17.md`.
+ * Pure. `heystop-notes/2026-08-17.md`.
  *
  * Chrome rejects a download whose filename escapes the Downloads directory, so
  * anything path-like is stripped rather than trusted. Dots are dropped along

@@ -39,7 +39,7 @@ Rebind at `chrome://extensions/shortcuts`.
 Two destinations, and neither one failing loses a note — every capture is
 committed to extension storage before anything else is attempted.
 
-- **A local Markdown file**, one per day, in `Downloads/heystop/`. Works with no
+- **A local Markdown file**, one per day, in `Downloads/heystop-notes/`. Works with no
   setup at all.
 - **A Google Doc**, if you connect one. Optional; see setup below.
 

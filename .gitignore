@@ -3,8 +3,9 @@ dist/
 *.zip
 .DS_Store
 
-# Captured notes. LocalMdSink writes to Downloads/heystop/<day>.md, which is
-# this repo. Day files are personal transcripts and must never be committed.
+# Captured notes. LocalMdSink writes to Downloads/heystop-notes/<day>.md, so
+# they no longer land in this repo. The pattern stays as a backstop: day files
+# are personal transcripts and must never be committed.
 20*.md
 
 # Personal Google Cloud OAuth client. See scripts/build.mjs.
