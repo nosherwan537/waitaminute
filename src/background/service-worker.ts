@@ -89,7 +89,7 @@ async function flagStalePage(
   command: CommandName,
   videoTitle: string,
 ): Promise<void> {
-  console.warn("[heystop] PageNeedsReload", "content script is stale; reload the tab");
+  console.warn("[waitaminute] PageNeedsReload", "content script is stale; reload the tab");
   // AGENTS.md: every failure path reaches the log, or it is invisible during
   // dogfooding. This one especially — how often an extension reload silently
   // costs a capture is a number worth having.
@@ -105,7 +105,7 @@ async function flagStalePage(
   try {
     await chrome.action.setBadgeText({ tabId, text: "!" });
     await chrome.action.setBadgeBackgroundColor({ tabId, color: "#b3261e" });
-    await chrome.action.setTitle({ tabId, title: "heystop: reload this page to reconnect" });
+    await chrome.action.setTitle({ tabId, title: "waitaminute: reload this page to reconnect" });
   } catch {
     // The tab closed between the failed sendMessage and here. Nothing to warn.
   }
@@ -216,7 +216,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       await writeDayFile(notes, day);
     } catch (cause) {
       warning = isNamedError(cause) ? cause.userMessage : "Couldn't write the local copy";
-      console.error("[heystop] LocalWriteFailed", cause);
+      console.error("[waitaminute] LocalWriteFailed", cause);
     }
 
     // A Docs problem outranks a local one in the toast: Docs is where the user
@@ -240,7 +240,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     // Full detail to the console, one actionable line to the user. Never the
     // reverse: an error the user can't act on is noise, and one they never see
     // is a silent failure.
-    console.error(`[heystop] ${named.name_}`, named.userMessage, named.cause ?? "");
+    console.error(`[waitaminute] ${named.name_}`, named.userMessage, named.cause ?? "");
 
     // Every failure is logged, including NothingToNote. That row IS the answer
     // to "does the prompt refuse during ads, or confabulate?" — the question
@@ -299,7 +299,7 @@ async function sliceFromAudio(
     const named: NamedError = isNamedError(error)
       ? error
       : new NamedError("CaptionsUnavailable", "Couldn't capture audio", false, error);
-    console.error(`[heystop] ${named.name_}`, named.userMessage, named.cause ?? "");
+    console.error(`[waitaminute] ${named.name_}`, named.userMessage, named.cause ?? "");
     await toastTo(tabId, { state: "error", text: named.userMessage });
     return undefined;
   }
@@ -323,7 +323,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     await toastTo(tabId, { state: "success", text: "Audio capture on for this tab" });
   } catch (error) {
     const text = isNamedError(error) ? error.userMessage : "Couldn't capture this tab's audio";
-    console.error("[heystop] armTab", error);
+    console.error("[waitaminute] armTab", error);
     await toastTo(tabId, { state: "error", text });
   }
 });
@@ -359,7 +359,7 @@ async function saveToDoc(
     const named: NamedError = isNamedError(cause)
       ? cause
       : new NamedError("DocsWriteFailed", "Couldn't write to your doc", false, cause);
-    console.error(`[heystop] ${named.name_}`, named.userMessage, named.cause ?? "");
+    console.error(`[waitaminute] ${named.name_}`, named.userMessage, named.cause ?? "");
     return { name: named.name_, text: named.userMessage };
   }
 }
@@ -392,4 +392,4 @@ chrome.runtime.onStartup.addListener(() => void syncContentScripts());
 chrome.runtime.onInstalled.addListener(() => void syncContentScripts());
 chrome.permissions.onRemoved.addListener(() => void syncContentScripts());
 
-console.debug("[heystop] service worker ready");
+console.debug("[waitaminute] service worker ready");

@@ -231,7 +231,7 @@ connectButton.addEventListener("click", async () => {
       isNamedError(error) ? error.userMessage : "Couldn't connect to Google.",
       !cancelled,
     );
-    console.error("[heystop] connect failed", error);
+    console.error("[waitaminute] connect failed", error);
   } finally {
     connectButton.disabled = !isConfigured();
   }

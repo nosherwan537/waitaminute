@@ -115,7 +115,7 @@ chrome.runtime.onMessage.addListener((message: Request, _sender, sendResponse) =
         }
       }
     } catch (cause) {
-      console.error("[heystop] offscreen", cause);
+      console.error("[waitaminute] offscreen", cause);
       // A failed START must not leave a half-built graph muting the tab.
       if (message.kind === "audio-start") await stop();
       sendResponse({ ok: false, reason: String(cause) });
@@ -125,4 +125,4 @@ chrome.runtime.onMessage.addListener((message: Request, _sender, sendResponse) =
   return true;
 });
 
-console.debug("[heystop] offscreen recorder ready");
+console.debug("[waitaminute] offscreen recorder ready");

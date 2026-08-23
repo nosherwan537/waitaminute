@@ -61,7 +61,7 @@ function ingest(cues: Cue[]): void {
 
 /**
  * SECURITY: this listener trusts a shape, not a sender. Any script on the page
- * can post `{source:"heystop", kind:"cues"}` and inject fake cue text, which
+ * can post `{source:"waitaminute", kind:"cues"}` and inject fake cue text, which
  * would end up in a note. The blast radius is one junk note the user can delete
  * — the same bounded risk PLAN.md already accepts for caption text itself, since
  * anyone can upload a video with hostile subtitles. It is NOT a code-execution
@@ -70,7 +70,7 @@ function ingest(cues: Cue[]): void {
 window.addEventListener("message", (event: MessageEvent) => {
   if (event.source !== window) return;
   const data = event.data as InterceptorMessage | undefined;
-  if (data?.source !== "heystop") return;
+  if (data?.source !== "waitaminute") return;
 
   if (data.kind === "captions-status") {
     captionsAvailable = data.available;
@@ -81,7 +81,7 @@ window.addEventListener("message", (event: MessageEvent) => {
   if (data.language) trackLanguage = { code: data.language, name: data.languageName };
   ingest(data.cues);
   console.debug(
-    `[heystop] ${data.cues.length} cues in (${trackLanguage.name ?? "?"}), ${cueIndex.size} held`,
+    `[waitaminute] ${data.cues.length} cues in (${trackLanguage.name ?? "?"}), ${cueIndex.size} held`,
   );
 });
 
@@ -242,4 +242,4 @@ chrome.runtime.onMessage.addListener((msg: { kind: string; command?: CommandName
   return;
 });
 
-console.debug("[heystop] content script ready");
+console.debug("[waitaminute] content script ready");

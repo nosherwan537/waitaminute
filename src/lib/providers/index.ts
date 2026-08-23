@@ -168,7 +168,7 @@ export async function complete(
     try {
       usage = adapter.extractUsage(body);
     } catch (cause) {
-      console.warn("[heystop] usage extraction failed", cause);
+      console.warn("[waitaminute] usage extraction failed", cause);
     }
 
     return { text, usage };

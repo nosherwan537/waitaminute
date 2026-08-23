@@ -299,7 +299,7 @@ export async function generateNote(
     // weeks. So ask once more without it rather than lose the note over an
     // optional extra. Once only — a second failure is the user's real error.
     if (!frameUsed || !isFrameRejection(error)) throw error;
-    console.warn("[heystop] provider rejected the frame; retrying text-only", error);
+    console.warn("[waitaminute] provider rejected the frame; retrying text-only", error);
     frameUsed = false;
     result = await callProvider(target, slice, undefined);
   }

@@ -18,7 +18,16 @@ import { NamedError } from "../lib/errors";
  * api.anthropic.com would be both useless and alarming.
  */
 
-const SCRIPT_ID_PREFIX = "heystop-site-";
+const SCRIPT_ID_PREFIX = "waitaminute-site-";
+
+/**
+ * The pre-rename prefix. Registrations use `persistAcrossSessions: true`, so a
+ * script registered under the old name survives in Chrome's registry and the
+ * sweep below would no longer recognise it as ours — it would keep injecting on
+ * a site the user may have since removed, with no way to remove it from the UI.
+ * Safe to delete once no install can predate the rename.
+ */
+const LEGACY_SCRIPT_ID_PREFIXES = ["heystop-site-"];
 
 export async function readSites(): Promise<string[]> {
   const { sites = [] } = (await chrome.storage.local.get("sites")) as { sites?: string[] };
@@ -114,7 +123,10 @@ export async function syncContentScripts(): Promise<void> {
   const active = granted.filter((g) => g.ok).map((g) => g.pattern);
 
   const existing = await chrome.scripting.getRegisteredContentScripts().catch(() => []);
-  const ours = existing.filter((s) => s.id.startsWith(SCRIPT_ID_PREFIX)).map((s) => s.id);
+  const prefixes = [SCRIPT_ID_PREFIX, ...LEGACY_SCRIPT_ID_PREFIXES];
+  const ours = existing
+    .filter((s) => prefixes.some((prefix) => s.id.startsWith(prefix)))
+    .map((s) => s.id);
   if (ours.length > 0) await chrome.scripting.unregisterContentScripts({ ids: ours });
 
   if (active.length === 0) return;

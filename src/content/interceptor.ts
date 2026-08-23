@@ -76,7 +76,7 @@ let activeLanguage: { code?: string; name?: string } = {};
 function publish(cues: Cue[]): void {
   if (cues.length === 0) return;
   const msg: InterceptorMessage = {
-    source: "heystop",
+    source: "waitaminute",
     kind: "cues",
     cues,
     language: activeLanguage.code,
@@ -87,7 +87,7 @@ function publish(cues: Cue[]): void {
 
 /** Tell the content script whether this video has any caption track at all. */
 function publishStatus(available: boolean): void {
-  const msg: InterceptorMessage = { source: "heystop", kind: "captions-status", available };
+  const msg: InterceptorMessage = { source: "waitaminute", kind: "captions-status", available };
   window.postMessage(msg, location.origin);
 }
 

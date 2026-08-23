@@ -2,7 +2,7 @@ import { NamedError } from "../lib/errors";
 import { dayMarkdown, type StoredNote } from "../lib/notes-store";
 
 /**
- * LocalMdSink — one Markdown file per day, under Downloads/heystop-notes/.
+ * LocalMdSink — one Markdown file per day, under Downloads/waitaminute-notes/.
  *
  * Two MV3 constraints shape this, and neither is obvious:
  *
@@ -24,7 +24,7 @@ import { dayMarkdown, type StoredNote } from "../lib/notes-store";
  * the item to reach `complete` first — see `awaitDownload`.
  */
 
-const FOLDER = "heystop-notes";
+const FOLDER = "waitaminute-notes";
 
 /** Pure. UTF-8 safe base64, chunked so a long day doesn't blow the call stack. */
 export function utf8ToBase64(text: string): string {
@@ -43,7 +43,7 @@ export function toDataUrl(markdown: string): string {
 }
 
 /**
- * Pure. `heystop-notes/2026-08-17.md`.
+ * Pure. `waitaminute-notes/2026-08-17.md`.
  *
  * Chrome rejects a download whose filename escapes the Downloads directory, so
  * anything path-like is stripped rather than trusted. Dots are dropped along

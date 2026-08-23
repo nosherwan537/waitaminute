@@ -64,24 +64,26 @@ describe("toDataUrl", () => {
 });
 
 describe("fileNameFor", () => {
-  it("puts the day file in the heystop folder", () => {
-    expect(fileNameFor("2026-08-17")).toBe("heystop-notes/2026-08-17.md");
+  it("puts the day file in the waitaminute folder", () => {
+    expect(fileNameFor("2026-08-17")).toBe("waitaminute-notes/2026-08-17.md");
   });
 
   it("strips path traversal, which Chrome would reject the download for", () => {
     // Dots go too: leaving them is exactly what lets `..` survive sanitizing.
-    expect(fileNameFor("../../etc/passwd")).toBe("heystop-notes/------etc-passwd.md");
-    expect(fileNameFor("2026/08/17")).toBe("heystop-notes/2026-08-17.md");
+    expect(fileNameFor("../../etc/passwd")).toBe("waitaminute-notes/------etc-passwd.md");
+    expect(fileNameFor("2026/08/17")).toBe("waitaminute-notes/2026-08-17.md");
     expect(fileNameFor("a/../b")).not.toContain("..");
   });
 
   it("never produces an empty filename", () => {
-    expect(fileNameFor("")).toBe("heystop-notes/untitled.md");
-    expect(fileNameFor("///")).toBe("heystop-notes/---.md");
+    expect(fileNameFor("")).toBe("waitaminute-notes/untitled.md");
+    expect(fileNameFor("///")).toBe("waitaminute-notes/---.md");
   });
 
   it("bounds the length, since some filesystems cap at 255 bytes", () => {
-    expect(fileNameFor("x".repeat(500)).length).toBeLessThan(120);
+    // 255 is the real constraint; the bound is not tied to the folder name's
+    // current length, which is what made this fail on a rename.
+    expect(fileNameFor("x".repeat(500)).length).toBeLessThan(255);
   });
 });
 
@@ -298,7 +300,7 @@ describe("writeDayFile", () => {
     await pending;
     expect(downloads.download).toHaveBeenCalledWith(
       expect.objectContaining({
-        filename: "heystop-notes/2026-08-17.md",
+        filename: "waitaminute-notes/2026-08-17.md",
         conflictAction: "overwrite",
         saveAs: false,
       }),

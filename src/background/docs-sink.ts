@@ -22,7 +22,7 @@ import { getToken, invalidate } from "./google-auth";
  */
 
 const DOCS = "https://docs.googleapis.com/v1/documents";
-const DOC_TITLE = "Hey Buddy — Notes";
+const DOC_TITLE = "Wait a Minute — Notes";
 
 export interface DocRef {
   id: string;

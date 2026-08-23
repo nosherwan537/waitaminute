@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Hey Buddy, Note This",
+  "name": "Wait a Minute",
   "version": "0.1.0",
   "description": "Press a hotkey while watching a video. The last 60 seconds becomes a note.",
   "permissions": [

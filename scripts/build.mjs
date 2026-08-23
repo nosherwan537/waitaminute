@@ -45,7 +45,7 @@ for (const entry of ENTRIES) {
         fileName: () => `${entry.out}.js`,
         // Required for iife. Nothing reads it: these bundles export nothing and
         // run for their side effects.
-        name: "heystop",
+        name: "waitaminute",
       },
     },
   });

@@ -61,7 +61,7 @@ export interface TranscriptSlice {
 /** Messages the MAIN-world interceptor posts to the isolated content script. */
 export type InterceptorMessage =
   | {
-      source: "heystop";
+      source: "waitaminute";
       kind: "cues";
       cues: Cue[];
       /** BCP-47 tag of the track these cues came from. */
@@ -70,7 +70,7 @@ export type InterceptorMessage =
       languageName?: string;
     }
   | {
-      source: "heystop";
+      source: "waitaminute";
       kind: "captions-status";
       /**
        * False only when the player response was read and listed ZERO caption

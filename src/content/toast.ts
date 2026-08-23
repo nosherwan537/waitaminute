@@ -17,7 +17,7 @@
 
 type ToastState = "processing" | "success" | "error" | "info";
 
-const HOST_ID = "heystop-toast-host";
+const HOST_ID = "waitaminute-toast-host";
 const AUTO_DISMISS_MS = 2000;
 
 let dismissTimer: number | undefined;

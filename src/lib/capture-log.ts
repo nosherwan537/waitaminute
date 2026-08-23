@@ -161,7 +161,7 @@ export async function appendLog(entry: LogEntry): Promise<void> {
     const captureLog = withLogRetention([entry, ...(await readLog())]);
     await chrome.storage.local.set({ captureLog });
   } catch (cause) {
-    console.warn("[heystop] capture log write failed", cause);
+    console.warn("[waitaminute] capture log write failed", cause);
   }
 }
 

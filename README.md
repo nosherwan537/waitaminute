@@ -1,4 +1,4 @@
-# Hey Buddy, Note This
+# Wait a Minute
 
 Press one key while watching a video. Never pause, never switch tabs, never lose
 your place. The last 60 seconds becomes a note — the speaker's actual words,
@@ -39,7 +39,7 @@ Rebind at `chrome://extensions/shortcuts`.
 Two destinations, and neither one failing loses a note — every capture is
 committed to extension storage before anything else is attempted.
 
-- **A local Markdown file**, one per day, in `Downloads/heystop-notes/`. Works with no
+- **A local Markdown file**, one per day, in `Downloads/waitaminute-notes/`. Works with no
   setup at all.
 - **A Google Doc**, if you connect one. Optional; see setup below.
 

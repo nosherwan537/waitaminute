@@ -97,7 +97,7 @@ export async function captureFrame(
       bitmap.close();
     }
   } catch (cause) {
-    console.warn("[heystop] frame capture skipped", cause);
+    console.warn("[waitaminute] frame capture skipped", cause);
     return undefined;
   }
 }
