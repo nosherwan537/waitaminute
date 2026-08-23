@@ -68,6 +68,12 @@ cue list lives in the content script for exactly that reason.
 10. **Reload the tab after every extension reload.** Not a code rule, a working rule:
     reloading an unpacked extension orphans the content scripts in open tabs. You now
     get a badge instead of silence, but the fix is still ⌘R on the page.
+11. **Never `erase()` a download that has not reported `complete`.**
+    `chrome.downloads.download()` resolves when the download STARTS, and erasing an
+    in-flight item cancels it. Erasing on the next line silently deleted every note
+    file for two days while the capture log showed `ok`. `awaitDownload` in
+    `local-sink.ts` is what makes the tidy-up safe; on timeout it deliberately leaves
+    the history row behind, because a stray row beats a lost note.
 
 ## Adding a hotkey
 

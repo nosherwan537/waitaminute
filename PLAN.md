@@ -209,10 +209,21 @@ you stop reading. This is the failure mode that kills the product quietly.
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | not needed (2 UI surfaces) |
 | Outside Voice | `/codex` | Independent 2nd opinion | 0 | — | codex not installed |
 
-**BUILD STATUS 2026-08-22:** steps 1–12 and 14 built. Steps 1–9 verified in a real
-browser end to end, including Google Docs. Steps 10 (generic TextTrack) and 11 (audio)
-are written and unit-tested but have never run against a real video. Step 13 (two weeks
-of dogfooding) has not started — it is the only remaining requirement for v1 done.
+**BUILD STATUS 2026-08-23:** steps 1–12 and 14 built. Steps 1–9 verified in a real
+browser end to end, including Google Docs. **Step 12 (frame capture) is now verified
+too** — a capture with the frame toggle on logged a `Frame` dot and input tokens of
+1945 against 628 for a caption-only capture on the same video. Steps 10 (generic
+TextTrack) and 11 (audio) are written and unit-tested but have never run against a
+real video. Step 13 (two weeks of dogfooding) has not started — it is the only
+remaining requirement for v1 done.
+
+**Watch item, one sample only:** that frame capture took 29.2s against 5.8s for
+caption-only. ~1,300 extra input tokens costs pennies; half a minute between hotkey
+and note is a product problem, because premise 7 is that the user never leaves the
+tab. Not yet attributed — it could be image encode, model thinking on a larger input,
+or ordinary variance. **Do not "fix" it by shrinking `MAX_EDGE_PX`** until it is
+measured: the frame's whole job is resolving deixis and garbled jargon off a slide,
+and that is exactly what a smaller image stops being able to do.
 
 **UNRESOLVED:** 0
 **CRITICAL GAPS:** 0 (the one found — `NothingToNote` undefined — was closed in the error registry)
