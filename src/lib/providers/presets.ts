@@ -49,10 +49,10 @@ export const PRESETS: readonly Preset[] = [
     label: "Google Gemini",
     adapter: "gemini",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-    defaultModel: "gemini-2.5-flash",
+    defaultModel: "gemini-3.6-flash",
     keyHint: "AIza...",
     origin: "https://generativelanguage.googleapis.com/*",
-    note: "Free tier at aistudio.google.com. Prefer a Flash model. Note that only 2.x can switch thinking off entirely — 2.5 Pro and every 3.x model can only turn it down, so they cost more per capture on what is only a cleanup pass.",
+    note: "Free tier at aistudio.google.com. Prefer a Flash model. Thinking cannot be switched off on 3.x — only turned down — so a capture costs a little more than the note itself needs. Google retires model names quickly; if this one is gone, the error says so and the field is editable.",
   },
   {
     id: "groq",
