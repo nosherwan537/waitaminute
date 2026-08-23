@@ -16,6 +16,12 @@ import { dayMarkdown, type StoredNote } from "../lib/notes-store";
  * The file is rewritten in full on every capture rather than appended to —
  * `chrome.downloads` cannot append. That is affordable because storage holds the
  * day and a day is a few dozen KB.
+ *
+ * A third constraint, learned the hard way: `download()` resolves when the
+ * download STARTS, not when the bytes are on disk, and `erase()` on a download
+ * that is still in flight *cancels* it. Erasing on the next line therefore
+ * deleted every note file while reporting success. The tidy-up now waits for
+ * the item to reach `complete` first — see `awaitDownload`.
  */
 
 const FOLDER = "heystop-notes";
@@ -52,8 +58,59 @@ export function fileNameFor(name: string): string {
   return `${FOLDER}/${safe}.md`;
 }
 
+/** How a download ended. `timeout` means "still running", not "failed". */
+export type DownloadOutcome = "complete" | "interrupted" | "timeout";
+
 /**
- * Rewrite one day's file. Resolves when the download is queued.
+ * A local `data:` write lands in milliseconds, so this cap is only ever hit if
+ * something is genuinely wrong. It bounds the capture toast, which waits on it.
+ */
+export const DOWNLOAD_TIMEOUT_MS = 5_000;
+
+/**
+ * Resolve once download `id` settles.
+ *
+ * The listener alone is not enough: a small `data:` URL can finish before the
+ * listener is even attached, and that missed event would strand the capture
+ * until the timeout. So the current state is polled once, AFTER subscribing —
+ * that order is what makes the race safe, since an event arriving during the
+ * poll is still caught by the listener already in place.
+ */
+export function awaitDownload(id: number, timeoutMs = DOWNLOAD_TIMEOUT_MS): Promise<DownloadOutcome> {
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const finish = (outcome: DownloadOutcome) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      chrome.downloads.onChanged.removeListener(onChanged);
+      resolve(outcome);
+    };
+
+    const onChanged = (delta: chrome.downloads.DownloadDelta) => {
+      if (delta.id !== id || !delta.state) return;
+      if (delta.state.current === "complete") finish("complete");
+      else if (delta.state.current === "interrupted") finish("interrupted");
+    };
+
+    const timer = setTimeout(() => finish("timeout"), timeoutMs);
+    chrome.downloads.onChanged.addListener(onChanged);
+
+    // The catch matters: if search() throws, the listener and timeout are still
+    // live, so the promise settles the normal way rather than hanging here.
+    chrome.downloads
+      .search({ id })
+      .then(([item]) => {
+        if (item?.state === "complete") finish("complete");
+        else if (item?.state === "interrupted") finish("interrupted");
+      })
+      .catch(() => {});
+  });
+}
+
+/**
+ * Rewrite one day's file. Resolves when the bytes are actually on disk.
  *
  * `conflictAction: "overwrite"` is what keeps this to a single file per day
  * instead of `2026-08-17 (1).md`, `(2)`, `(3)` climbing all afternoon.
@@ -72,6 +129,20 @@ export async function writeDayFile(notes: readonly StoredNote[], day: string): P
     // loss. The next capture rewrites the file and it repairs itself.
     throw new NamedError("LocalWriteFailed", "Couldn't write the local copy", false, cause);
   }
+
+  const outcome = await awaitDownload(downloadId);
+
+  // An interrupted download is a real failure and must reach the capture log.
+  // Reporting `ok` here is precisely the bug that hid empty note files behind
+  // three green rows.
+  if (outcome === "interrupted") {
+    throw new NamedError("LocalWriteFailed", "Couldn't write the local copy", false);
+  }
+
+  // Only tidy a download that is genuinely finished. Erasing an in-flight item
+  // cancels it, so on `timeout` the history row is left behind on purpose — a
+  // stray row in chrome://downloads is a far better outcome than a lost note.
+  if (outcome !== "complete") return;
 
   // Drop the history row. The file stays; chrome://downloads doesn't fill up
   // with one entry per keypress. Failure here is cosmetic only.

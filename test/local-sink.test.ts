@@ -1,5 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { utf8ToBase64, toDataUrl, fileNameFor } from "../src/background/local-sink";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import {
+  utf8ToBase64,
+  toDataUrl,
+  fileNameFor,
+  awaitDownload,
+  writeDayFile,
+} from "../src/background/local-sink";
 import { dayMarkdown, withRetention, localDay, MAX_NOTES } from "../src/lib/notes-store";
 import type { StoredNote } from "../src/lib/notes-store";
 
@@ -158,5 +164,152 @@ describe("dayMarkdown", () => {
       "2026-08-17",
     );
     expect(out).toContain("a\n\n## Two");
+  });
+});
+
+/**
+ * A stand-in for `chrome.downloads` good enough to test the completion wait.
+ *
+ * `settle` fires the state change the way Chrome would, so a test can decide
+ * whether the download finishes, breaks, or never reports back at all.
+ */
+function fakeDownloads(options: { startState?: string; downloadId?: number } = {}) {
+  const listeners = new Set<(delta: { id: number; state?: { current: string } }) => void>();
+  const id = options.downloadId ?? 7;
+  let state = options.startState ?? "in_progress";
+
+  const downloads = {
+    download: vi.fn(async () => id),
+    erase: vi.fn(async () => [id]),
+    search: vi.fn(async ({ id: wanted }: { id: number }) => (wanted === id ? [{ id, state }] : [])),
+    onChanged: {
+      addListener: (fn: (delta: { id: number; state?: { current: string } }) => void) =>
+        void listeners.add(fn),
+      removeListener: (fn: (delta: { id: number; state?: { current: string } }) => void) =>
+        void listeners.delete(fn),
+    },
+  };
+
+  const settle = (next: string, forId = id) => {
+    state = next;
+    for (const fn of [...listeners]) fn({ id: forId, state: { current: next } });
+  };
+
+  (globalThis as { chrome?: unknown }).chrome = { downloads };
+  return { downloads, settle, listenerCount: () => listeners.size };
+}
+
+afterEach(() => {
+  delete (globalThis as { chrome?: unknown }).chrome;
+  vi.useRealTimers();
+});
+
+describe("awaitDownload", () => {
+  it("resolves complete when the state change arrives", async () => {
+    const { settle } = fakeDownloads();
+    const pending = awaitDownload(7);
+    settle("complete");
+    await expect(pending).resolves.toBe("complete");
+  });
+
+  it("reports an interrupted download rather than treating it as done", async () => {
+    const { settle } = fakeDownloads();
+    const pending = awaitDownload(7);
+    settle("interrupted");
+    await expect(pending).resolves.toBe("interrupted");
+  });
+
+  it("catches a download that finished before the listener attached", async () => {
+    // The race that matters: a small data: URL can be on disk before we
+    // subscribe, and the missed event would otherwise strand the capture.
+    fakeDownloads({ startState: "complete" });
+    await expect(awaitDownload(7)).resolves.toBe("complete");
+  });
+
+  it("ignores state changes belonging to another download", async () => {
+    vi.useFakeTimers();
+    const { settle } = fakeDownloads({ downloadId: 7 });
+    const pending = awaitDownload(7, 50);
+    settle("complete", 99); // some other file the user downloaded mid-capture
+    await vi.advanceTimersByTimeAsync(50);
+    await expect(pending).resolves.toBe("timeout");
+  });
+
+  it("times out instead of hanging the capture forever", async () => {
+    vi.useFakeTimers();
+    fakeDownloads();
+    const pending = awaitDownload(7, 50);
+    await vi.advanceTimersByTimeAsync(50);
+    await expect(pending).resolves.toBe("timeout");
+  });
+
+  it("unsubscribes once settled, so listeners cannot pile up per keypress", async () => {
+    const { settle, listenerCount } = fakeDownloads();
+    const pending = awaitDownload(7);
+    settle("complete");
+    await pending;
+    expect(listenerCount()).toBe(0);
+  });
+});
+
+describe("writeDayFile", () => {
+  const notes = [note()];
+
+  it("erases the history row only after the file is on disk", async () => {
+    // The bug this guards: erase() on an in-flight download CANCELS it, so the
+    // old code deleted every note file and still reported success.
+    const { downloads, settle } = fakeDownloads();
+    const pending = writeDayFile(notes, "2026-08-17");
+    expect(downloads.erase).not.toHaveBeenCalled();
+    settle("complete");
+    await pending;
+    expect(downloads.erase).toHaveBeenCalledWith({ id: 7 });
+  });
+
+  it("fails loudly when the download is interrupted", async () => {
+    // An interrupted write must reach the capture log as LocalWriteFailed —
+    // a green `ok` row next to a missing file is what hid this for two days.
+    const { downloads, settle } = fakeDownloads();
+    const pending = writeDayFile(notes, "2026-08-17");
+    settle("interrupted");
+    await expect(pending).rejects.toThrow(/local copy/i);
+    expect(downloads.erase).not.toHaveBeenCalled();
+  });
+
+  it("leaves a slow download alone rather than cancelling it", async () => {
+    vi.useFakeTimers();
+    const { downloads } = fakeDownloads();
+    const pending = writeDayFile(notes, "2026-08-17");
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(pending).resolves.toBeUndefined();
+    expect(downloads.erase).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a refused download as LocalWriteFailed", async () => {
+    const { downloads } = fakeDownloads();
+    downloads.download.mockRejectedValueOnce(new Error("Download failed"));
+    await expect(writeDayFile(notes, "2026-08-17")).rejects.toThrow(/local copy/i);
+  });
+
+  it("writes one overwriting file per day", async () => {
+    const { downloads, settle } = fakeDownloads();
+    const pending = writeDayFile(notes, "2026-08-17");
+    settle("complete");
+    await pending;
+    expect(downloads.download).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filename: "heystop-notes/2026-08-17.md",
+        conflictAction: "overwrite",
+        saveAs: false,
+      }),
+    );
+  });
+
+  it("does not fail the capture when only the tidy-up erase fails", async () => {
+    const { downloads, settle } = fakeDownloads();
+    downloads.erase.mockRejectedValueOnce(new Error("no such download"));
+    const pending = writeDayFile(notes, "2026-08-17");
+    settle("complete");
+    await expect(pending).resolves.toBeUndefined();
   });
 });
