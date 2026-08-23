@@ -151,8 +151,10 @@ notes, local files, Google Docs, three hotkeys, toasts, the capture log, the
 generic caption source, the audio fallback, and the optional video frame.
 
 Verified against real videos: the whole caption path, from hotkey to a note in
-a Google Doc with a working deep link. Written but never yet run in a browser:
-the generic caption source on a non-YouTube site, and the audio fallback.
+a Google Doc with a working deep link, and the optional video frame. Written but
+**never yet run in a browser: the generic caption source on a non-YouTube site,
+and the audio fallback.** Treat those two as experimental — they are unit-tested
+and unexercised, which is not the same as working.
 
 Not done: the two weeks of real study that decide whether any of this works
 (step 13).
