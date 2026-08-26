@@ -60,7 +60,17 @@ export function toMatchPattern(input: string): string {
   }
   // Whole host, all paths. Narrower would break the SPA navigation these
   // platforms all use; wider would be a different site entirely.
-  return `${url.protocol}//${url.hostname}/*`;
+  //
+  // `www.` is stripped because it is not a meaningfully different site the way
+  // `player.` or `m.` can be (a different app, a different embed) — it is the
+  // same domain typed two ways, and a user who types one while the video page
+  // loads on the other must not get a silent no-op. Every other subdomain
+  // stays distinct on purpose; see the `shouldHaveContentScript` tests.
+  return `${url.protocol}//${stripWww(url.hostname)}/*`;
+}
+
+function stripWww(hostname: string): string {
+  return hostname.replace(/^www\./, "");
 }
 
 /**
@@ -77,7 +87,7 @@ export function patternCovers(pattern: string, url: string): boolean {
   const host = rest.replace(/\/\*$/, "");
   try {
     const parsed = new URL(url);
-    return parsed.protocol === `${scheme}:` && parsed.hostname === host;
+    return parsed.protocol === `${scheme}:` && stripWww(parsed.hostname) === stripWww(host);
   } catch {
     return false;
   }

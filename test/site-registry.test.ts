@@ -14,7 +14,7 @@ describe("toMatchPattern", () => {
   it("keeps the whole host and widens the path", () => {
     // Narrower than /* breaks the SPA navigation every course platform uses.
     expect(toMatchPattern("https://www.coursera.org/learn/ml/lecture/7")).toBe(
-      "https://www.coursera.org/*",
+      "https://coursera.org/*",
     );
   });
 
@@ -24,6 +24,11 @@ describe("toMatchPattern", () => {
 
   it("treats a subdomain as its own site, since the permission is per host", () => {
     expect(toMatchPattern("player.vimeo.com")).not.toBe(toMatchPattern("vimeo.com"));
+  });
+
+  it("strips www, since it is the same site typed two ways, not a distinct subdomain", () => {
+    expect(toMatchPattern("www.ted.com")).toBe(toMatchPattern("ted.com"));
+    expect(toMatchPattern("https://www.ted.com/talks/x")).toBe("https://ted.com/*");
   });
 
   it("rejects input that would widen the grant beyond one site", () => {
@@ -98,5 +103,12 @@ describe("shouldHaveContentScript", () => {
   it("rejects a malformed pattern rather than matching everything", () => {
     expect(patternCovers("vimeo.com", "https://vimeo.com/1")).toBe(false);
     expect(patternCovers("", "https://vimeo.com/1")).toBe(false);
+  });
+
+  it("matches a bare-domain pattern against a www. page and vice versa", () => {
+    // The bug that motivated this: a site added as "ted.com" must still match
+    // when the actual talk page loads on "www.ted.com".
+    expect(patternCovers("https://ted.com/*", "https://www.ted.com/talks/x")).toBe(true);
+    expect(patternCovers("https://www.ted.com/*", "https://ted.com/talks/x")).toBe(true);
   });
 });
